@@ -1,0 +1,119 @@
+#!/usr/bin/env lua
+-- tm — universal taskmark utility (SPEC-TASKMARK-03)
+--
+-- Dispatches subcommands to the taskmark modules in this repository:
+--   tm init       Bootstrap a project's doc/tasks/ directory with starter files
+--   tm sweep      Move completed tasks from active.tm.md into completed.tm.md
+--   tm rotate     A sweep, then bump active.tm.md's sprint/date frontmatter
+--   tm archive    Archive aged-out sections from completed.tm.md into archive/
+--   tm validate   Validate taskmark file(s) for spec compliance
+--   tm indent     Prefix stdin with the four-space payload indent
+--   tm dedent     Remove the four-space payload indent from stdin
+--   tm help       Show usage
+--   tm version    Show version
+--
+-- The specification this tool implements lives in doc/taskmark_spec.md.
+
+local function script_dir()
+    return arg[0]:match("^(.*)/[^/]+$") or "."
+end
+
+-- Locate the directory holding the Lua modules, working both from the source
+-- tree (where this script sits next to them in src/) and after installation
+-- (where they live in PREFIX/share/tm).
+local function lib_dir()
+    local bindir = script_dir()
+    local candidate = bindir .. "/../share/tm"
+    local probe = io.open(candidate .. "/tmsweep_core.lua", "r")
+    if probe then
+        probe:close()
+        return candidate
+    end
+    return bindir
+end
+
+local ldir = lib_dir()
+package.path = ldir .. "/?.lua;" .. ldir .. "/../src/?.lua;" .. package.path
+
+-- Read the version from a VERSION file when present (repo root in the source
+-- tree, or share/tm/VERSION after installation), falling back to a constant so
+-- `tm version` always reports something sane.
+local function read_version()
+    for _, cand in ipairs({ lib_dir() .. "/VERSION", lib_dir() .. "/../VERSION" }) do
+        local f = io.open(cand, "r")
+        if f then
+            -- The first line only (not %S+, which would truncate an
+            -- installed "0.3.0 (v0.3.0-4-g9f9a63f)" descriptor -- see
+            -- Makefile's install-version -- at its first space).
+            local v = f:read("*l")
+            f:close()
+            if v and v ~= "" then return v end
+        end
+    end
+    return "0.3.0"
+end
+
+local VERSION = read_version()
+
+local USAGE = [[
+tm — universal taskmark utility (SPEC-TASKMARK-03)
+
+Usage:
+  tm <command> [options]
+
+Commands:
+  init       Bootstrap doc/tasks/ with starter active.tm.md/future.tm.md/
+             completed.tm.md files
+  sweep      Move every completed task from active.tm.md into completed.tm.md
+  rotate     A sweep, then bump active.tm.md's sprint/date frontmatter
+             (requires --sprint VALUE) and completed.tm.md's date
+  archive    Archive sections aged out of completed.tm.md into
+             archive/<YYYY>/<YYYY-MM>.tm.md
+  validate   Validate taskmark file(s) for SPEC-TASKMARK-03 compliance
+  indent     Prefix stdin with the four-space payload indent
+  dedent     Remove the four-space payload indent from stdin
+  help       Show this help
+  version    Show version
+
+Run `tm <command> --help` for command-specific options.
+
+The specification implemented by this tool is documented in
+doc/taskmark_spec.md.
+]]
+
+local function fail(msg)
+    io.stderr:write(msg .. "\n")
+    os.exit(1)
+end
+
+local cmd = arg[1]
+if not cmd then
+    io.write(USAGE)
+    os.exit(1)
+end
+
+-- Remaining arguments become the subcommand's own argument vector.
+local rest = {}
+for i = 2, #arg do rest[#rest + 1] = arg[i] end
+
+if cmd == "help" or cmd == "-h" or cmd == "--help" then
+    io.write(USAGE)
+    os.exit(0)
+elseif cmd == "version" or cmd == "--version" then
+    io.write("tm " .. VERSION .. "\n")
+    os.exit(0)
+elseif cmd == "init" then
+    require("tminit").run(rest)
+elseif cmd == "sweep" then
+    require("tmsweep").run({ "--sweep", table.unpack(rest) })
+elseif cmd == "rotate" then
+    require("tmsweep").run({ "--rotate", table.unpack(rest) })
+elseif cmd == "archive" then
+    require("tmsweep").run({ "--archive", table.unpack(rest) })
+elseif cmd == "validate" then
+    require("tmval").run(rest)
+elseif cmd == "indent" or cmd == "dedent" then
+    require("tmfilter").run({ cmd, table.unpack(rest) })
+else
+    fail("Unknown command: " .. cmd .. "\nRun 'tm help' for usage.")
+end
