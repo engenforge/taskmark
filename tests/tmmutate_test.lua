@@ -617,6 +617,47 @@ do
     cleanup_dir(tmp)
 end
 
+-- ── 10. tm list says when there is nothing to list ─────────────────────────
+
+do
+    local tmp = make_temp_dir()
+    tmio.mkdir_p(tmp .. "/.tasks")
+    -- Run tm list with stdout and stderr captured separately.
+    local function list(args)
+        local errf = tmp .. "/stderr.txt"
+        local p = io.popen(string.format("cd %s && lua %s list %s 2>%s; echo __EXIT__$?",
+            tmio.shell_quote(tmp), tm_abs, args, tmio.shell_quote(errf)))
+        local out = p:read("*a")
+        p:close()
+        local code = tonumber(out:match("__EXIT__(%d+)")) or -1
+        return out:gsub("__EXIT__%d+%s*$", ""), read(errf) or "", code
+    end
+
+    write(tmp .. "/.tasks/active.tm.md", "# S\n\n- [x] Finished\n")
+    local out, err, code = list("")
+    check("list", "no pending tasks: stdout stays empty, exit 0", out == "" and code == 0, out)
+    check("list", "no pending tasks: a note on stderr names the file",
+        err:find("no pending tasks in .tasks/active.tm.md", 1, true) ~= nil, err)
+
+    out, err = list("--all")
+    check("list", "--all with only completed tasks lists them, no note", out:find("[x] Finished", 1, true) ~= nil and err == "", err)
+
+    write(tmp .. "/.tasks/active.tm.md", "# S\n")
+    out, err = list("--all")
+    check("list", "--all on a file with no tasks: note says no tasks", out == "" and err:find("no tasks in", 1, true) ~= nil, err)
+
+    write(tmp .. "/.tasks/active.tm.md", "# S\n\n- [ ] Pending\n")
+    write(tmp .. "/.tasks/future.tm.md", "# P\n")
+    out, err = list(".tasks/active.tm.md .tasks/future.tm.md")
+    check("list", "several files: only the empty one gets a note",
+        out:find("Pending", 1, true) ~= nil and err:find("future.tm.md", 1, true) ~= nil
+        and not err:find("active.tm.md", 1, true), err)
+
+    out, err = list("")
+    check("list", "pending tasks: no note", err == "", err)
+    cleanup_dir(tmp)
+end
+
 -- ── Summary ──────────────────────────────────────────────────────────────
 
 print(string.format("\nResults: %d passed, %d failed, %d total\n", passed, failed, passed + failed))

@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`tm sweep --sprint LABEL`** always buckets under `## Sprint LABEL`, even for labels such as `2026-11` or `Sprint-1`.
 - **Symlinked task files** are written through to their target; the link is no longer replaced by a regular file.
 - **`--`** ends options for `tm add/done/move/list`, so task text may start with `-`.
+- **`tm list`** notes on stderr when a file has no tasks to list; stdout stays empty for scripts.
 - **Lock handling:** waiting falls back to whole-second `sleep` where fractional sleep is unsupported, and a lock that cannot be removed is reported.
 - **Sweep into a `completed.tm.md` without a title:** no longer writes a duplicate section heading.
 - **Atomic writes:** temp files are uniquely named per write, a short write or failed flush never replaces the original, and `tm validate --fix` now uses the same writer (preserving CRLF documents).

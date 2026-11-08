@@ -491,6 +491,12 @@ function M.run(subcmd, args)
                 print("== " .. f)
             end
             for _, item in ipairs(items) do print(item) end
+            if #items == 0 then
+                -- On stderr, so a script reading stdout still sees an
+                -- empty listing.
+                io.stderr:write(string.format("tm: no %stasks in %s\n",
+                    filter == "all" and "" or "pending ", f))
+            end
         end
         os.exit(0)
     end

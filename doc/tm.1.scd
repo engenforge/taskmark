@@ -40,7 +40,9 @@ the current working directory (the layout described by the spec).
 	for humans and AI agents alike. By default, lists pending tasks from the
 	active task document. With *--all*, lists both pending and completed
 	tasks (completed tasks marked `[x]`). Given several files, each listing
-	is headed `== <file>`. A missing file is an error.
+	is headed `== <file>`. A file with nothing to list prints nothing on
+	standard output and a short note on standard error. A missing file is
+	an error.
 
 *add* _<task-text>_ [-p|--priority _PRI_] [--section _SECTION_] [--file _FILE_] [--tasks-dir _DIR_]
 	Add a pending task at the end of the named section's own content
