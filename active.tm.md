@@ -1,10 +1,3 @@
----
-project: taskmark
-status: Active
-sprint: 2026-S3
-date: 2026-11-08
----
-
 # Current Sprint
 
 - [x] (A) +io @lua Runtime hardening: collision-safe atomic writes in `src/tmio.lua`
