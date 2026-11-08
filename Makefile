@@ -286,6 +286,7 @@ install-bin:
 install-version: $(VERSION_FILE)
 	$(INSTALL_DIR) $(SHAREDIR)
 	echo '$(TM_VERSION_FULL)' > $(SHAREDIR)/VERSION
+	chmod 644 $(SHAREDIR)/VERSION
 
 install-man:
 	@if [ -f $(MAN) ]; then \
