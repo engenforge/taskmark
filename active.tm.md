@@ -34,12 +34,13 @@
     > - Preserve inverted traceability: tasks link to git commits via the spec's `git:<sha>` form in the `Completed` field, with zero task numbering syntax in Markdown files.
     > **Files:** `src/tm`, `src/tmscan.lua`, `src/tmsweep.lua`, `tests/tmmutation_test.lua` (or similar), man pages.
     > **Verify:** End-to-end CLI unit and integration tests; `tm validate` passes on mutated files; verify reverse-chronological order in `completed.tm.md`.
-    > **Completed:** 2026-11-08 git:86d99ec
+    > **Completed:** 2026-11-08 git:368c79e
 
-- [ ] (B) +git @workflow Orphan Git branch topology and worktree integration
+- [x] (B) +git @workflow Orphan Git branch topology and worktree integration
     > **Context:** Storing task tracking files directly in the main codebase branch introduces commit noise and pull-request churn. Mounting an orphan `tasks` branch into `.tasks/` via `git worktree add` isolates task history from primary code history.
     > **Requirements:**
     > - Add `tm init --orphan [branch]` command to automate initializing an orphan branch, ignoring `.tasks` on `main`, configuring `tasks_dir: .tasks` in `.taskmarkrc`, and mounting `.tasks` as a sub-worktree.
     > - Formally document the `.tasks/` orphan worktree pattern and cross-branch `git: <sha>` commit references in `doc/taskmark_spec.md`.
     > - Provide optional `tm sync` / auto-commit helper to commit changes in `.tasks/` to the orphan branch.
     > **Verify:** Clean worktree initialization, end-to-end task mutations on mounted worktree, and validation that `git status` on `main` ignores `.tasks/`.
+    > **Completed:** 2026-11-08 git:2baaae9
