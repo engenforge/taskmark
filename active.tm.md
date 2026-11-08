@@ -36,9 +36,10 @@ date: 2026-11-08
     > - Implement `tm done <hash-or-pattern> [--git HEAD]`: locates the target pending task in `active.tm.md` by 4-char hash or substring match, marks it `- [x]`, resolves completion date and current git SHA, appends compliant 4-space `> **Completed:**` payload, and saves atomically.
     > - Implement `tm move <hash-or-pattern> --from <file> --to <file>`: non-destructive copy-then-delete task promotion from `future.tm.md` to `active.tm.md`.
     > - Implement `tm add <task-text> [--section <name>]`: safely appends a task under the target heading.
+    > - Ensure `completed.tm.md` is maintained in strict reverse chronological order: the most recently completed sections (e.g. `## YYYY-MM`) and individual completed tasks are placed at the top of the file/section, allowing humans and AI agents to inspect the latest work immediately without scrolling to the end of a long file.
     > - Preserve inverted traceability: tasks link to git commits via `(git: <sha>)`, with zero task numbering syntax in Markdown files.
-    > **Files:** `src/tm`, `src/tmscan.lua`, `tests/tmmutation_test.lua` (or similar), man pages.
-    > **Verify:** End-to-end CLI unit and integration tests; `tm validate` passes on mutated files.
+    > **Files:** `src/tm`, `src/tmscan.lua`, `src/tmsweep.lua`, `tests/tmmutation_test.lua` (or similar), man pages.
+    > **Verify:** End-to-end CLI unit and integration tests; `tm validate` passes on mutated files; verify reverse-chronological order in `completed.tm.md`.
 
 - [ ] (B) +git @workflow Orphan Git branch topology and worktree integration
     > **Context:** Storing task tracking files directly in the main codebase branch introduces commit noise and pull-request churn. Mounting an orphan `tasks` branch into `.tasks/` via `git worktree add` isolates task history from primary code history.
