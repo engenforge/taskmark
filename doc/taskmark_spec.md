@@ -292,7 +292,7 @@ At the beginning of a working session, read `.tasks/active.tm.md` and choose the
     > **Completed:** 2026-07-07
 ```
 
-The `Completed` field MUST carry an ISO date. The short git hash of the implementing commit (`git:<sha>`, 7–40 hex characters) MUST be present whenever the task involved a commit, so the archive stays auditable against history, and MUST be omitted for a task completed outside of coding.
+The `Completed` field MUST carry an ISO date. The short git hash of the implementing commit (`git:<sha>`, 7–40 hex characters) MUST be present whenever the task involved a commit, so the archive stays auditable against history, and MUST be omitted for a task completed outside of coding. When using an orphan branch topology (§10.2), this hash references the commit on the primary code branch, establishing cross-branch auditability (§10.3).
 
 Steps 2 and 3 are a single mechanical edit, and are best left to a tool (the reference CLI's `tm done`) so that the token, indent, and field placement come out right every time.
 
@@ -543,3 +543,48 @@ Configuration controls *where* a tool reads and writes the files this specificat
 ## 10. Isolation and Portability
 
 Task data lives inside `.tasks/` relative to the repository root, so it travels with the repository through clones, containers, and sandboxes with no external path hierarchy, no global data store, and no network service. A project's tasks are as private as its source, and history for both is the same history.
+
+### 10.1 In-Tree Placement
+
+By default, `.tasks/` resides directly inside the repository tree on the primary branch. This is the simplest topology: every clone gets the complete task history, and commits to tasks share the branch timeline with code.
+
+### 10.2 Orphan Git Branch Topology and Worktree Integration
+
+Storing frequent task mutations directly on the primary code branch (`main`) adds commit noise and pull-request churn. To keep task history separate from code history while keeping the files on disk, a project MAY keep its task directory on an independent **orphan branch** (conventionally `tasks`) that is mounted at `.tasks/` as a Git worktree. Nothing about the file format changes; this is purely a storage arrangement.
+
+Setting it up once, from the repository root (the reference CLI's `tm init --orphan` performs these steps):
+
+```shell
+echo "/.tasks/" >> .gitignore            # 1. hide the mount from the code branch
+echo "tasks_dir: .tasks" >> .taskmarkrc  # 2. name the task directory
+git worktree add --orphan -b tasks .tasks   # 3. mount a new orphan branch (git >= 2.42)
+# ...create the task files, then commit and publish the branch:
+git -C .tasks add -A && git -C .tasks commit -m "Initialize task branch"
+git -C .tasks push -u origin tasks
+git add .gitignore .taskmarkrc && git commit -m "Track tasks on the tasks branch"
+```
+
+A worktree is local to one clone; cloning the repository fetches the `tasks` branch but does not mount it. Each collaborator mounts the *existing* branch, so that everyone shares one task history:
+
+```shell
+git fetch origin
+git worktree add .tasks tasks    # creates a local `tasks` tracking origin/tasks
+```
+
+Starting a second orphan branch instead would give that collaborator an unrelated history that cannot be pushed without merging the two.
+
+In this topology:
+
+- **History isolation:** commits on `tasks` share no history with `main` or feature branches.
+- **Clean code branches:** `git status` and pull-request diffs on code branches never show task edits, because `/.tasks/` is ignored there.
+- **Independent synchronization:** task commits are made and pushed on their own schedule (`git -C .tasks commit` / `push`, or the reference CLI's `tm sync`), subject to the same git hooks as any other commit.
+
+Search tools that honor `.gitignore` — `ripgrep` and the editors and AI coding agents built on it — skip `.tasks/` when searching the whole repository, although they still read or search it when given its path. Usually that is welcome, keeping historical task text out of code searches. A project that wants repository-wide searches to include its tasks can add a `.ignore` file containing `!/.tasks/`, which `ripgrep` honors and Git does not read. Pointing agents at the files directly — for example, a line in the repository's agent instructions naming `.tasks/active.tm.md` — works either way.
+
+### 10.3 Cross-Branch Commit References (`git:<sha>`)
+
+In an orphan worktree topology, task files live on the task branch while code changes are committed to code branches. The `Completed` field (§5.2) records the *code* commit that implemented the task (`git:<sha>`), never the task-branch commit that recorded the completion. Both branches share one object store, so the reference resolves in any clone that has fetched the code branch.
+
+The link is deliberately one-directional, from task to commit: code commit messages do not reference tasks, and Taskmark has no stable task identifiers to put in them (tooling handles are derived from task text and change when it is edited). To find the task behind a commit, search the task files for its hash — `rg <sha> .tasks/` — including `completed.tm.md` and `archive/`.
+
+A recorded hash can stop resolving if the commit it names is discarded. In particular, a hash taken from a feature branch that is later squash-merged or rebased names a commit that may never reach `main`, and is lost once that branch is deleted and garbage-collected. Stamp the hash of the commit as it lands on the long-lived branch, or update the stamp after merging.

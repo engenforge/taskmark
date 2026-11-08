@@ -125,6 +125,17 @@ archive_dir: archive
 
 `--tasks-dir` on the command line takes priority over both files; all three fall back to the built-in defaults shown above when unset. A project created before 0.4 that has only `doc/tasks/` (the old default) keeps resolving there until `.tasks/` exists or `tasks_dir` is configured.
 
+### Orphan Branch Topology & Worktrees
+
+To decouple task tracking history from primary code history while keeping task files strictly local to the repository, Taskmark supports an orphan branch topology:
+
+1. **Isolation:** Task history lives on an independent branch (conventionally `tasks`) with no shared commit history with `main`.
+2. **Worktree Mounting:** The orphan branch is mounted into `.tasks/` via a git worktree. `tm init --orphan` creates it, or — in a fresh clone of a project that already has one — mounts the existing remote branch, so collaborators share one task history.
+3. **Ignored in Code:** `.gitignore` on `main` ignores `/.tasks/`, eliminating task commit churn and pull-request noise on code branches.
+4. **Cross-Branch Auditability:** Completed tasks stamp the code commit SHA (`git:<sha>`), linking the orphan task archive directly to the codebase commit.
+5. **Tooling:** Automated by `tm init --orphan [branch]` (run from the repository root) and synchronized with `tm sync`. Git hooks run normally for both.
+6. **Search tools:** `ripgrep`-based tools, including many AI agents, skip ignored `.tasks/` in repository-wide searches but still read it by path. Name `.tasks/active.tm.md` in your agent instructions, or add a `.ignore` file containing `!/.tasks/` to include it in searches (see spec §10.2).
+
 ---
 
 ## CLI Tool (`tm`)
@@ -135,7 +146,8 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 
 | Command | Description |
 |---|---|
-| `tm init` | Bootstrap taskmark folder and starter files (`active.tm.md`, `future.tm.md`, `completed.tm.md`). |
+| `tm init [--orphan [BRANCH]]` | Bootstrap taskmark folder and starter files (with `--orphan`, initializes an isolated orphan Git branch mounted as a worktree). |
+| `tm sync [-m MSG] [-p]` | Commit modified taskmark files in the tasks directory to the orphan branch (`-p` pushes to remote). |
 | `tm list [--pending\|--all]` | One line per task — its handle and summary (`[f4a1] (A) Task text`), no payloads. Handles are the shortest unique hash prefix of at least 4 hex digits. |
 | `tm add <text> [-p PRI] [--section S]` | Add a task to an existing file, under the first heading or the named section. |
 | `tm done <handle\|pattern> [--git [REV]]` | Mark a pending task completed, stamping the local date and optionally `git:<sha>` of REV (default `HEAD`). |
@@ -159,14 +171,20 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 - `--to <FILE>`: With `move`, destination file (default: `active.tm.md`).
 - `--sprint <id>`: With `sweep`, bucket the swept tasks under `## Sprint <id>` instead of the current month.
 - `--dry-run`: Preview changes without modifying any files. Applies to `sweep` and `archive`.
+- `--orphan [BRANCH]`: With `init`, initialize an isolated orphan Git branch (default: `tasks`), configure `.gitignore` and `.taskmarkrc`, and mount `.tasks/` as a worktree.
+- `-m, --message <MSG>`: With `sync`, commit message for the orphan branch commit.
+- `-p, --push`: With `sync`, push after committing; the first push sets the upstream (to `origin`, or the only remote).
 - `--tasks-dir <DIR>`: Path to task directory (defaults to `./.tasks`, or the `tasks_dir` set in [`.taskmarkrc`](#configuration)).
 - `-h`, `--help`: Show command-specific help.
 
 #### Examples
 
 ```bash
-# Bootstrap taskmark directory and starter files
-tm init
+# Bootstrap taskmark directory with an isolated orphan branch worktree
+tm init --orphan
+
+# Synchronize task changes to the orphan branch
+tm sync -m "tasks: update sprint backlog"
 
 # List pending tasks, one line each, with their handles
 tm list

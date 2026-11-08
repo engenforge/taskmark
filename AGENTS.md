@@ -11,6 +11,7 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
   - Validator tests: `lua tests/test_runner.lua src/tmval.lua tests/fixtures`
   - Sweep/archive tests: `lua tests/tmsweep_test.lua`
   - Init tests: `lua tests/tminit_test.lua`
+  - Sync tests: `lua tests/tmsync_test.lua`
   - Config resolution tests: `lua tests/tmconfig_test.lua`
   - Filter tests: `lua tests/tmfilter_test.lua`
   - I/O filesystem unit tests: `lua tests/tmio_test.lua`

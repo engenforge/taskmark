@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Orphan Git Branch Topology and Worktree Integration:**
+  - Added `tm init --orphan [branch]` command to automate initializing an isolated orphan branch (default: `tasks`), ignoring `.tasks/` in `.gitignore`, setting `tasks_dir: .tasks` in `.taskmarkrc`, mounting `.tasks/` as a worktree, and committing starter files.
+  - `tm init --orphan` mounts an existing local or already-fetched remote branch before creating a new one (so a clone joins the shared history), never copies code-branch files into the worktree, works on git without `worktree add --orphan`, refuses a non-worktree directory and non-root invocation, and names the code-branch files left to commit.
+  - Added `tm sync [-m MSG] [-p]`, which commits the tasks directory only when it is the top level of its own work tree, passes the message to git verbatim, sets the upstream on the first push, and shows git's errors. Git hooks run normally for both commands.
+  - Formally specified the orphan branch worktree pattern (§10.2) and cross-branch commit references (`git:<sha>`, §10.3) in `doc/taskmark_spec.md`.
 - **Task mutations and compact listings (`tm list`, `tm add`, `tm done`, `tm move`):**
   - **Ephemeral handles:** each task is addressed by the shortest prefix (at least 4 hex digits) of a hash of its summary that is unique in its file; nothing is written to the task files. The hash ignores checkbox state, so a handle survives `tm done`. Ambiguous handles or substring patterns are rejected with each candidate's unique handle listed.
   - **`tm list [--pending|--all]`:** one line per task, without payloads.

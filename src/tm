@@ -62,7 +62,8 @@ Usage:
 
 Commands:
   init       Bootstrap .tasks/ with starter active.tm.md/future.tm.md/
-             completed.tm.md files
+             completed.tm.md files (--orphan mounts an isolated branch)
+  sync       Commit tasks directory changes to the orphan branch
   list       Stream compact task summaries with 4-char ephemeral hash handles
   add        Safely add a task under the target heading
   done       Mark a pending task completed with ISO date and optional git SHA
@@ -106,6 +107,8 @@ elseif cmd == "version" or cmd == "--version" then
     os.exit(0)
 elseif cmd == "init" then
     require("tminit").run(rest)
+elseif cmd == "sync" then
+    require("tmsync").run(rest)
 elseif cmd == "list" or cmd == "done" or cmd == "move" or cmd == "add" then
     require("tmmutate").run(cmd, rest)
 elseif cmd == "sweep" then

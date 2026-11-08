@@ -19,9 +19,20 @@ Unless a path is given, *tm* operates on the _.tasks_ directory relative to
 the current working directory (the layout described by the spec).
 
 # COMMANDS
-*init*
+*init* [--orphan [_BRANCH_]] [--tasks-dir _DIR_]
 	Bootstrap _.tasks_ with starter _active.tm.md_, _future.tm.md_, and
 	_completed.tm.md_ files. Never overwrites a file that already exists.
+	With *--orphan*, keeps the tasks directory on its own git branch,
+	mounted as a worktree (see *--orphan*).
+
+*sync* [-m _MSG_] [--tasks-dir _DIR_] [-p|--push]
+	Stage and commit every change in the tasks directory (default message
+	"tasks: sync (<timestamp>)"), and with *--push* push it. The tasks
+	directory must be the top level of its own git work tree -- normally
+	the worktree made by *init --orphan* -- so nothing outside it can be
+	staged; a plain directory inside a larger repository is refused. Git
+	hooks run as for any commit, and git's own messages are shown when a
+	commit or push fails.
 
 *list* [--pending|--all] [--tasks-dir _DIR_] [_file_...]
 	Print one line per task, its handle and summary, e.g.
@@ -139,6 +150,24 @@ the current working directory (the layout described by the spec).
 *--tasks-dir* _DIR_
 	Directory holding the task files. Defaults to _./.tasks_, or the
 	*tasks_dir* set in _.taskmarkrc_ (see CONFIGURATION).
+
+*--orphan* [_BRANCH_]
+	With *init*, run from the repository root: mount branch _BRANCH_
+	(default _tasks_) at the tasks directory as a git worktree, add the
+	directory to _.gitignore_, and set *tasks_dir* in _.taskmarkrc_. An
+	existing local branch is mounted as is; a branch already fetched from a
+	remote is checked out tracking it, so a collaborator joins the shared
+	task history; otherwise a new orphan branch is created with only the
+	starter files, committed with hooks running. Works with any git that has
+	*git worktree*. Refuses an existing directory that is not a worktree.
+	The changed _.gitignore_ and _.taskmarkrc_ are left for you to commit.
+
+*-m*, *--message* _MSG_
+	With *sync*: commit message, passed to git verbatim.
+
+*-p*, *--push*
+	With *sync*: push after committing. The first push of a new branch sets
+	its upstream to _origin_, or to the only remote.
 
 *-h*, *--help*
 	Show help for the command.

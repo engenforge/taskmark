@@ -26,10 +26,23 @@ Unless a path is given, \fBtm\fR operates on the \fI.\&tasks\fR directory relati
 the current working directory (the layout described by the spec).\&
 .PP
 .SH COMMANDS
-\fBinit\fR
+\fBinit\fR [\-\-orphan [\fIBRANCH\fR]] [\-\-tasks\-dir \fIDIR\fR]
 .RS 4
 Bootstrap \fI.\&tasks\fR with starter \fIactive.\&tm.\&md\fR, \fIfuture.\&tm.\&md\fR, and
 \fIcompleted.\&tm.\&md\fR files.\& Never overwrites a file that already exists.\&
+With \fB\-\-orphan\fR, keeps the tasks directory on its own git branch,
+mounted as a worktree (see \fB\-\-orphan\fR).\&
+.PP
+.RE
+\fBsync\fR [\-m \fIMSG\fR] [\-\-tasks\-dir \fIDIR\fR] [\-p|\-\-push]
+.RS 4
+Stage and commit every change in the tasks directory (default message
+"tasks: sync (<timestamp>)"), and with \fB\-\-push\fR push it.\& The tasks
+directory must be the top level of its own git work tree \-\- normally
+the worktree made by \fBinit \-\-orphan\fR \-\- so nothing outside it can be
+staged; a plain directory inside a larger repository is refused.\& Git
+hooks run as for any commit, and git'\&s own messages are shown when a
+commit or push fails.\&
 .PP
 .RE
 \fBlist\fR [\-\-pending|\-\-all] [\-\-tasks\-dir \fIDIR\fR] [\fIfile\fR.\&.\&.\&]
@@ -191,6 +204,30 @@ Report what would move and change nothing.\& Applies to \fBsweep\fR and
 .RS 4
 Directory holding the task files.\& Defaults to \fI.\&/.\&tasks\fR, or the
 \fBtasks_dir\fR set in \fI.\&taskmarkrc\fR (see CONFIGURATION).\&
+.PP
+.RE
+\fB\-\-orphan\fR [\fIBRANCH\fR]
+.RS 4
+With \fBinit\fR, run from the repository root: mount branch \fIBRANCH\fR
+(default \fItasks\fR) at the tasks directory as a git worktree, add the
+directory to \fI.\&gitignore\fR, and set \fBtasks_dir\fR in \fI.\&taskmarkrc\fR.\& An
+existing local branch is mounted as is; a branch already fetched from a
+remote is checked out tracking it, so a collaborator joins the shared
+task history; otherwise a new orphan branch is created with only the
+starter files, committed with hooks running.\& Works with any git that has
+\fBgit worktree\fR.\& Refuses an existing directory that is not a worktree.\&
+The changed \fI.\&gitignore\fR and \fI.\&taskmarkrc\fR are left for you to commit.\&
+.PP
+.RE
+\fB\-m\fR, \fB\-\-message\fR \fIMSG\fR
+.RS 4
+With \fBsync\fR: commit message, passed to git verbatim.\&
+.PP
+.RE
+\fB\-p\fR, \fB\-\-push\fR
+.RS 4
+With \fBsync\fR: push after committing.\& The first push of a new branch sets
+its upstream to \fIorigin\fR, or to the only remote.\&
 .PP
 .RE
 \fB\-h\fR, \fB\-\-help\fR
