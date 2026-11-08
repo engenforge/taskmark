@@ -12,6 +12,7 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
   - Sweep/archive tests: `lua tests/tmsweep_test.lua`
   - Init tests: `lua tests/tminit_test.lua`
   - Sync tests: `lua tests/tmsync_test.lua`
+  - Mutation tests (list/add/done/move): `lua tests/tmmutate_test.lua`
   - Config resolution tests: `lua tests/tmconfig_test.lua`
   - Filter tests: `lua tests/tmfilter_test.lua`
   - I/O filesystem unit tests: `lua tests/tmio_test.lua`
@@ -26,6 +27,12 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
 - **Always:** run `make test` before committing; ensure all tests pass cleanly.
 - **Always:** follow TDD protocol per `CONTEXT.md` (verify baseline, test-first, confirm failure, minimal implementation, verify, refactor, commit).
 - **Never:** push or tag without being asked; commit scratch notes or chat transcripts; add files specific to one AI tool (this file is the single, tool-neutral source of agent guidance).
+
+## Task tracking
+
+- This project tracks its own work with Taskmark. Current tasks are in `.tasks/active.tm.md`, planned work in `.tasks/future.tm.md`, and finished work in `.tasks/completed.tm.md` (newest first).
+- `.tasks/` is a git worktree of the orphan `tasks` branch and is ignored on `main`, so repository-wide searches skip it: read or search those paths directly.
+- Prefer the CLI to hand-editing: `tm list` for a compact view, `tm done <handle> --git` to complete a task, `tm add`/`tm move` to add or promote one. Commit task changes with `tm sync`, never as part of a code commit.
 
 ## Sources of truth
 
