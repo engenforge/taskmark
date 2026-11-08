@@ -18,7 +18,7 @@ Usage:
   tm init -h | --help
 
 Options:
-  --tasks-dir DIR  Directory to scaffold (default: doc/tasks, or the
+  --tasks-dir DIR  Directory to scaffold (default: .tasks, or the
                    tasks_dir set in .taskmarkrc -- see SPEC-TASKMARK-03 §10)
   -h, --help       Show this help
 ]=]

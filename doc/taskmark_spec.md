@@ -172,7 +172,7 @@ The hub contains at most three files:
 
 * **Inbox** (`inbox.tm.md`) — append-only from the capturing side, read-and-drain from the repository side. Tasks and raw thoughts are added here whenever opening the right repository is inconvenient or impossible, and consumed by triage (§7.3). Capture profile (§1.3).
 * **Dashboard** (`dashboard.tm.md`) — generated output, read-only from the consuming side. Regenerated in full on each run (§7.2). Strict profile.
-* **Registry** (`registry.txt`) — plain text, one absolute path per line, each naming the root of a repository whose `doc/tasks/` should be included in the dashboard and in cross-project queries. Blank lines and lines whose first non-space character is `#` are ignored. This file is not Taskmark-formatted and is local to the machine that runs the tooling.
+* **Registry** (`registry.txt`) — plain text, one absolute path per line, each naming the root of a repository whose `.tasks/` should be included in the dashboard and in cross-project queries. Blank lines and lines whose first non-space character is `#` are ignored. This file is not Taskmark-formatted and is local to the machine that runs the tooling.
 
 Because the inbox is only ever appended to on one side and drained on the other, and the dashboard is only ever written on one side and read on the other, no file has two writers and the transport layer cannot produce a conflict.
 
@@ -352,7 +352,7 @@ This section describes the working practices Taskmark is shaped around and the o
 
 ### 5.1 Session Start
 
-At the beginning of a working session, read `doc/tasks/active.tm.md` and choose the first pending (`- [ ]`) task with no unmet dependencies. Consult `future.tm.md` when context on upcoming work is needed.
+At the beginning of a working session, read `.tasks/active.tm.md` and choose the first pending (`- [ ]`) task with no unmet dependencies. Consult `future.tm.md` when context on upcoming work is needed.
 
 ### 5.2 Completing a Task
 
@@ -563,7 +563,7 @@ Because frontmatter, headings, task tokens, and the payload indent are each iden
 -- Schematic Taskmark reader. One pass, one variable of state.
 local heading, in_fm, fm_done, meta = nil, false, false, {}
 
-for line in io.lines("doc/tasks/active.tm.md") do
+for line in io.lines(".tasks/active.tm.md") do
     if not fm_done and line == "---" then
         if in_fm then fm_done = true else in_fm = true end
     elseif in_fm then
@@ -589,7 +589,7 @@ Taskmark's grammar is fixed enough that syntax highlighting, folding, and comple
 A conforming editor integration SHOULD name its filetype `taskmark` and SHOULD activate on any of the following:
 
 1. **Extension glob** — `*.tm.md`. This is the primary trigger (§2.1).
-2. **Path glob** — files inside a configured tasks directory, `*/doc/tasks/*` by default (§10), which catches a project that has renamed its task files.
+2. **Path glob** — files inside a configured tasks directory, `*/.tasks/*` by default (§10), which catches a project that has renamed its task files.
 3. **Content signature** — a first line of exactly `---` followed within the block by a `project:` or `status:` line. A plugin may read the first few lines of a buffer and set the filetype from this alone.
 
 ### 9.1 Authoring Aids
@@ -637,7 +637,7 @@ Configuration uses the **same flat `key: value` subset as frontmatter** (§2.2.1
 
 ```text
 # paths for this project
-tasks_dir: doc/tasks
+tasks_dir: .tasks
 active_file: active.tm.md
 future_file: future.tm.md
 completed_file: completed.tm.md
@@ -664,12 +664,14 @@ Resolution is **per key**, not per file: a local file that sets only `tasks_dir`
 3. **Global configuration file.**
 4. **Built-in defaults** — the conventional paths used throughout this specification.
 
+**Legacy task directory.** Before SPEC-TASKMARK-04 the default `tasks_dir` was `doc/tasks`. When no source above sets `tasks_dir`, `.tasks/` does not exist, and `doc/tasks/` does, a tool SHOULD resolve `tasks_dir` to `doc/tasks` so that an existing project keeps working unconfigured. Once `.tasks/` exists, or `tasks_dir` is set anywhere, the fallback never applies.
+
 ### 10.3 Scope
 
 Configuration controls *where* a tool reads and writes the files this specification defines. It does not change file contents, task grammar, or any other rule in this document. `archive_dir` renames only the top-level folder; the `<YYYY>/<YYYY-MM>.tm.md` layout beneath it is fixed.
 
 ## 11. Isolation and Portability
 
-Task data lives inside `doc/tasks/` relative to the repository root, so it travels with the repository through clones, containers, and sandboxes with no external path hierarchy, no global data store, and no network service. A project's tasks are as private as its source, and history for both is the same history.
+Task data lives inside `.tasks/` relative to the repository root, so it travels with the repository through clones, containers, and sandboxes with no external path hierarchy, no global data store, and no network service. A project's tasks are as private as its source, and history for both is the same history.
 
 The hub does not weaken this. It stores no authoritative data, and the dashboard is derived output that can be regenerated or deleted at any time without loss.

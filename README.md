@@ -49,18 +49,17 @@ Read the full specification at [`doc/taskmark_spec.md`](doc/taskmark_spec.md).
 Taskmark separates global project indexing from repository-level execution:
 
 - **Hub (Global Workspace):** `~/tasks/` containing global indexes and cross-repo status.
-- **Spoke (Local Repository):** Managed inside `doc/tasks/` in each repository root:
+- **Spoke (Local Repository):** Managed inside `.tasks/` in each repository root:
 
 ```text
 [Project Repository Root]/
-└── doc/
-    └── tasks/
-        ├── active.tm.md       # Current sprint: tasks in active execution
-        ├── future.tm.md       # Planned work backlog (by topic/tag)
-        ├── completed.tm.md    # Append-only archive of completed sprints
-        └── archive/           # Aged-out sections (moved automatically by `tm archive`)
-            └── <YYYY>/
-                └── <YYYY-MM>.tm.md
+└── .tasks/
+    ├── active.tm.md       # Current sprint: tasks in active execution
+    ├── future.tm.md       # Planned work backlog (by topic/tag)
+    ├── completed.tm.md    # Append-only archive of completed sprints
+    └── archive/           # Aged-out sections (moved automatically by `tm archive`)
+        └── <YYYY>/
+            └── <YYYY-MM>.tm.md
 ```
 
 ### Frontmatter Schema
@@ -113,7 +112,7 @@ Optional conventions adapted from `todo.txt`, layered onto the existing task/pay
 
 ### Task Lifecycle
 
-1. **Session Start:** Read `doc/tasks/active.tm.md` and pick the first pending task (`- [ ]`).
+1. **Session Start:** Read `.tasks/active.tm.md` and pick the first pending task (`- [ ]`).
 2. **Task Completion:**
    - Commit code changes to git, if any.
    - Mark task as `- [x]`.
@@ -121,7 +120,7 @@ Optional conventions adapted from `todo.txt`, layered onto the existing task/pay
      `git:<short-sha>` whenever the task involved a commit.
 3. **Sweep:** Run `tm sweep` to move completed tasks (each with its own payload) into `completed.tm.md`. Pending tasks, headings, and top-level prose stay put, even once every task beneath them is done.
 4. **Rotation:** Run `tm rotate --sprint <new-id>` at a sprint boundary — a sweep, plus a new `sprint`/`date` stamp on `active.tm.md` and a `date` stamp on `completed.tm.md`. Nothing is ever promoted out of `future.tm.md` automatically; moving planned work into the active sprint is always a deliberate edit.
-5. **Archival:** Run `tm archive` periodically to move aged-out sections to `doc/tasks/archive/<YYYY>/<YYYY-MM>.tm.md` — a section ages out once it is older than the 10 newest *and* its most recent `> **Completed:**` task is more than 14 days old.
+5. **Archival:** Run `tm archive` periodically to move aged-out sections to `.tasks/archive/<YYYY>/<YYYY-MM>.tm.md` — a section ages out once it is older than the 10 newest *and* its most recent `> **Completed:**` task is more than 14 days old.
 
 ### Configuration
 
@@ -131,14 +130,14 @@ All of the above paths are conventions, not hardcoded requirements. Configuratio
 - **Global** — `$XDG_CONFIG_HOME/taskmark/config`, falling back to `~/.config/taskmark/config`.
 
 ```text
-tasks_dir: doc/tasks
+tasks_dir: .tasks
 active_file: active.tm.md
 future_file: future.tm.md
 completed_file: completed.tm.md
 archive_dir: archive
 ```
 
-`--tasks-dir` on the command line takes priority over both files; all three fall back to the built-in defaults shown above when unset.
+`--tasks-dir` on the command line takes priority over both files; all three fall back to the built-in defaults shown above when unset. A project created before 0.4 that has only `doc/tasks/` (the old default) keeps resolving there until `.tasks/` exists or `tasks_dir` is configured.
 
 ---
 
@@ -164,7 +163,7 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 
 - `--sprint <VALUE>`: New sprint identifier to stamp on `active.tm.md`. Required with `rotate`.
 - `--dry-run`: Preview changes without modifying any files. Applies to `sweep`, `rotate`, and `archive`.
-- `--tasks-dir <DIR>`: Path to task directory (defaults to `./doc/tasks`, or the `tasks_dir` set in [`.taskmarkrc`](#configuration)).
+- `--tasks-dir <DIR>`: Path to task directory (defaults to `./.tasks`, or the `tasks_dir` set in [`.taskmarkrc`](#configuration)).
 - `-h`, `--help`: Show command-specific help.
 
 #### Examples
@@ -174,7 +173,7 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 tm init
 
 # Bootstrap in a custom directory
-tm init --tasks-dir /path/to/repo/doc/tasks
+tm init --tasks-dir /path/to/repo/.tasks
 
 # Validate the active task list
 tm validate
@@ -183,7 +182,7 @@ tm validate
 tm validate ~/tasks/backlog.tm.md
 
 # Validate multiple task files
-tm validate doc/tasks/active.tm.md doc/tasks/future.tm.md
+tm validate .tasks/active.tm.md .tasks/future.tm.md
 
 # Move completed tasks into the archive
 tm sweep
@@ -195,10 +194,10 @@ tm rotate --sprint 2026-S4 --dry-run
 tm rotate --sprint 2026-S4
 
 # Archive aged sections in a specific directory
-tm archive --tasks-dir /path/to/repo/doc/tasks
+tm archive --tasks-dir /path/to/repo/.tasks
 
 # Move a stack trace into a task's payload and back out again
-tm indent < trace.txt >> doc/tasks/active.tm.md
+tm indent < trace.txt >> .tasks/active.tm.md
 tm dedent --fence < payload-excerpt.txt > trace.txt
 ```
 

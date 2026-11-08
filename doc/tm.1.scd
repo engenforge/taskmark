@@ -13,12 +13,12 @@ sprints, archive aged-out sections, validate files for spec compliance, and
 filter arbitrary text into and out of a payload block. The specification it
 implements is documented in _doc/taskmark_spec.md_.
 
-Unless a path is given, *tm* operates on the _doc/tasks_ directory relative to
+Unless a path is given, *tm* operates on the _.tasks_ directory relative to
 the current working directory (the layout described by the spec).
 
 # COMMANDS
 *init*
-	Bootstrap _doc/tasks_ with starter _active.tm.md_, _future.tm.md_, and
+	Bootstrap _.tasks_ with starter _active.tm.md_, _future.tm.md_, and
 	_completed.tm.md_ files. Never overwrites a file that already exists.
 
 *sweep*
@@ -37,7 +37,7 @@ the current working directory (the layout described by the spec).
 
 *archive*
 	Move sections aged out of _completed.tm.md_ into
-	_doc/tasks/archive/<YYYY>/<YYYY-MM>.tm.md_, grouped by the month of
+	_.tasks/archive/<YYYY>/<YYYY-MM>.tm.md_, grouped by the month of
 	each section's most recent *Completed* task. A section is retained if
 	it is among the 10 newest or its most recent *Completed* task is dated
 	within the last 14 days.
@@ -79,23 +79,23 @@ the current working directory (the layout described by the spec).
 	*rotate*, and *archive*.
 
 *--tasks-dir* _DIR_
-	Directory holding the task files. Defaults to _./doc/tasks_, or the
+	Directory holding the task files. Defaults to _./.tasks_, or the
 	*tasks_dir* set in _.taskmarkrc_ (see CONFIGURATION).
 
 *-h*, *--help*
 	Show help for the command.
 
 # FILES
-_doc/tasks/active.tm.md_
+_.tasks/active.tm.md_
 	The current sprint.
 
-_doc/tasks/future.tm.md_
+_.tasks/future.tm.md_
 	Planned work not yet scheduled to a sprint.
 
-_doc/tasks/completed.tm.md_
+_.tasks/completed.tm.md_
 	Append-only archive of completed sprints, newest first.
 
-_doc/tasks/archive/<YYYY>/<YYYY-MM>.tm.md_
+_.tasks/archive/<YYYY>/<YYYY-MM>.tm.md_
 	Sections aged out of _completed.tm.md_. Tool-managed; never
 	hand-authored, and never rewritten once written.
 
@@ -114,7 +114,7 @@ from two locations, each optional:
 - *Local* — _.taskmarkrc_ in the directory *tm* is invoked from.
 
 ```
-tasks_dir: doc/tasks
+tasks_dir: .tasks
 active_file: active.tm.md
 future_file: future.tm.md
 completed_file: completed.tm.md
@@ -123,7 +123,9 @@ archive_dir: archive
 
 Resolution is per key, highest priority first: an explicit command-line
 option, the local file, the global file, then the built-in default shown
-above. An absent file, an absent key, or an unparseable line falls back
+above. When *tasks_dir* is not set anywhere and _./.tasks_ does not
+exist but _./doc/tasks_ (the pre-0.4 default) does, _./doc/tasks_ is used.
+An absent file, an absent key, or an unparseable line falls back
 silently to the next source. See _doc/taskmark_spec.md_ §10 for the full
 resolution order and the additional hub-related keys.
 

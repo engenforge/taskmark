@@ -189,10 +189,13 @@ do
     os.execute("rm -rf " .. tmpdir)
 end
 
--- ── This repository's own doc/tasks/ files ────────────────────────────────
+-- ── This repository's own task files ──────────────────────────────────────
+
+local tmconfig = require("tmconfig")
+local repo_cfg = tmconfig.resolve()
 
 for _, name in ipairs({ "active.tm.md", "future.tm.md", "completed.tm.md" }) do
-    local path = script_dir .. "/../doc/tasks/" .. name
+    local path = script_dir .. "/../" .. repo_cfg.tasks_dir .. "/" .. name
     local f = io.open(path, "r")
     if f then
         local content = f:read("*a")
@@ -200,9 +203,10 @@ for _, name in ipairs({ "active.tm.md", "future.tm.md", "completed.tm.md" }) do
         local lines = tmscan.lines_of(content)
         local body_lines = body_of(lines)
         local ok, reasons = check_oracle(table.concat(body_lines, "\n"), body_lines)
-        check("doc/tasks", name, ok, reasons[1])
+        check(repo_cfg.tasks_dir, name, ok, reasons[1])
     else
-        check("doc/tasks", name, false, "file not found: " .. path)
+        -- Standalone distribution tarballs do not contain repository task tracking worktrees
+        print(string.format("  SKIP: %s/%s not present", repo_cfg.tasks_dir, name))
     end
 end
 
@@ -215,7 +219,7 @@ end
 do
     local tmpdir = os.tmpname()
     os.remove(tmpdir)
-    local tasks_dir = tmpdir .. "/doc/tasks"
+    local tasks_dir = tmpdir .. "/.tasks"
     os.execute("mkdir -p " .. tasks_dir)
     os.execute(string.format(
         "lua %s/../src/tminit.lua --tasks-dir %s >/dev/null 2>&1", script_dir, tasks_dir))

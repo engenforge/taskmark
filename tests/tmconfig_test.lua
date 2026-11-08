@@ -96,10 +96,10 @@ end
 
 do
     local cfg = tmconfig.resolve({ config_path = "/nonexistent/.taskmarkrc", global_config_path = NO_GLOBAL })
-    check("resolve", "no file, no overrides: tasks_dir default", cfg.tasks_dir == "doc/tasks")
-    check("resolve", "no file, no overrides: active_path derived", cfg.active_path == "doc/tasks/active.tm.md")
-    check("resolve", "no file, no overrides: future_path derived", cfg.future_path == "doc/tasks/future.tm.md")
-    check("resolve", "no file, no overrides: completed_path derived", cfg.completed_path == "doc/tasks/completed.tm.md")
+    check("resolve", "no file, no overrides: tasks_dir default", cfg.tasks_dir == ".tasks")
+    check("resolve", "no file, no overrides: active_path derived", cfg.active_path == ".tasks/active.tm.md")
+    check("resolve", "no file, no overrides: future_path derived", cfg.future_path == ".tasks/future.tm.md")
+    check("resolve", "no file, no overrides: completed_path derived", cfg.completed_path == ".tasks/completed.tm.md")
     check("resolve", "no file, no overrides: archive_dir default", cfg.archive_dir == "archive")
     check("resolve", "no file, no overrides: hub_dir default", cfg.hub_dir == "~/tasks")
     check("resolve", "no file, no overrides: inbox_file default", cfg.inbox_file == "inbox.tm.md")
@@ -269,6 +269,67 @@ date: 2026-08-01
     check("e2e", "malformed .taskmarkrc: conventional filename used",
           read_file(dir .. "/fallback_check/active.tm.md") ~= nil)
 
+    os.execute("rm -rf " .. dir)
+end
+
+-- ── Default tasks_dir: .tasks ───────────────────────────────────
+
+do
+    local dir = make_temp_dir("tmconfig_default")
+    local tm = io.popen("realpath " .. script_dir .. "/../src/tm"):read("*l")
+
+    -- 1. In a fresh directory with no tasks_dir configured:
+    -- `tm init` defaults to creating .tasks/ starter files
+    local out, code = run_cmd(string.format("cd %s && lua %s init", dir, tm))
+    check("default_dir", "fresh init defaults to .tasks: exit 0", code == 0)
+    check("default_dir", "creates .tasks/active.tm.md", read_file(dir .. "/.tasks/active.tm.md") ~= nil)
+
+    -- `tm validate` with no args resolves .tasks/active.tm.md
+    out, code = run_cmd(string.format("cd %s && lua %s validate", dir, tm))
+    check("default_dir", "validate finds .tasks/active.tm.md: exit 0", code == 0)
+    check("default_dir", "validate output mentions .tasks/active.tm.md", out:match("%.tasks/active%.tm%.md") ~= nil)
+
+    os.execute("rm -rf " .. dir)
+end
+
+-- ── Legacy doc/tasks fallback ───────────────────────────────────
+
+do
+    local tm = io.popen("realpath " .. script_dir .. "/../src/tm"):read("*l")
+    local function init_in(dir)
+        return run_cmd(string.format("cd %s && XDG_CONFIG_HOME=/nonexistent lua %s init", dir, tm))
+    end
+
+    -- A pre-0.4 project with only doc/tasks/ keeps resolving there unconfigured.
+    local dir = make_temp_dir("tmconfig_legacy")
+    os.execute("mkdir -p " .. dir .. "/doc/tasks")
+    local f = io.open(dir .. "/doc/tasks/active.tm.md", "w")
+    f:write("# Current Sprint\n")
+    f:close()
+    local out, code = init_in(dir)
+    check("legacy_dir", "only doc/tasks exists: init exits 0", code == 0, out)
+    check("legacy_dir", "only doc/tasks exists: resolves doc/tasks",
+        out:match("Skipped doc/tasks/active%.tm%.md") ~= nil and not out:match("%.tasks/"), out)
+    check("legacy_dir", "only doc/tasks exists: no .tasks/ created",
+        read_file(dir .. "/.tasks/active.tm.md") == nil)
+    os.execute("rm -rf " .. dir)
+
+    -- Once .tasks/ exists it wins over the legacy directory.
+    dir = make_temp_dir("tmconfig_legacy_both")
+    os.execute("mkdir -p " .. dir .. "/doc/tasks " .. dir .. "/.tasks")
+    out = init_in(dir)
+    check("legacy_dir", "both exist: .tasks wins", out:match("Created %.tasks/active%.tm%.md") ~= nil, out)
+    os.execute("rm -rf " .. dir)
+
+    -- An explicitly configured tasks_dir is never second-guessed.
+    dir = make_temp_dir("tmconfig_legacy_cfg")
+    os.execute("mkdir -p " .. dir .. "/doc/tasks")
+    f = io.open(dir .. "/.taskmarkrc", "w")
+    f:write("tasks_dir: .tasks\n")
+    f:close()
+    out = init_in(dir)
+    check("legacy_dir", "configured tasks_dir is not replaced by the fallback",
+        out:match("Created %.tasks/active%.tm%.md") ~= nil, out)
     os.execute("rm -rf " .. dir)
 end
 

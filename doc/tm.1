@@ -5,7 +5,7 @@
 .nh
 .ad l
 .\" Begin generated content:
-.TH "tm" "1" "2026\-11\-02"
+.TH "tm" "1" "2026\-11\-08"
 .PP
 .SH NAME
 tm \- universal taskmark utility
@@ -20,13 +20,13 @@ sprints, archive aged\-out sections, validate files for spec compliance, and
 filter arbitrary text into and out of a payload block.\& The specification it
 implements is documented in \fIdoc/taskmark_spec.\&md\fR.\&
 .PP
-Unless a path is given, \fBtm\fR operates on the \fIdoc/tasks\fR directory relative to
+Unless a path is given, \fBtm\fR operates on the \fI.\&tasks\fR directory relative to
 the current working directory (the layout described by the spec).\&
 .PP
 .SH COMMANDS
 \fBinit\fR
 .RS 4
-Bootstrap \fIdoc/tasks\fR with starter \fIactive.\&tm.\&md\fR, \fIfuture.\&tm.\&md\fR, and
+Bootstrap \fI.\&tasks\fR with starter \fIactive.\&tm.\&md\fR, \fIfuture.\&tm.\&md\fR, and
 \fIcompleted.\&tm.\&md\fR files.\& Never overwrites a file that already exists.\&
 .PP
 .RE
@@ -51,7 +51,7 @@ automatically.\&
 \fBarchive\fR
 .RS 4
 Move sections aged out of \fIcompleted.\&tm.\&md\fR into
-\fIdoc/tasks/archive/<YYYY>/<YYYY\-MM>.\&tm.\&md\fR, grouped by the month of
+\fI.\&tasks/archive/<YYYY>/<YYYY\-MM>.\&tm.\&md\fR, grouped by the month of
 each section'\&s most recent \fBCompleted\fR task.\& A section is retained if
 it is among the 10 newest or its most recent \fBCompleted\fR task is dated
 within the last 14 days.\&
@@ -109,7 +109,7 @@ Report what would move and change nothing.\& Applies to \fBsweep\fR,
 .RE
 \fB\-\-tasks\-dir\fR \fIDIR\fR
 .RS 4
-Directory holding the task files.\& Defaults to \fI.\&/doc/tasks\fR, or the
+Directory holding the task files.\& Defaults to \fI.\&/.\&tasks\fR, or the
 \fBtasks_dir\fR set in \fI.\&taskmarkrc\fR (see CONFIGURATION).\&
 .PP
 .RE
@@ -119,22 +119,22 @@ Show help for the command.\&
 .PP
 .RE
 .SH FILES
-\fIdoc/tasks/active.\&tm.\&md\fR
+\fI.\&tasks/active.\&tm.\&md\fR
 .RS 4
 The current sprint.\&
 .PP
 .RE
-\fIdoc/tasks/future.\&tm.\&md\fR
+\fI.\&tasks/future.\&tm.\&md\fR
 .RS 4
 Planned work not yet scheduled to a sprint.\&
 .PP
 .RE
-\fIdoc/tasks/completed.\&tm.\&md\fR
+\fI.\&tasks/completed.\&tm.\&md\fR
 .RS 4
 Append\-only archive of completed sprints, newest first.\&
 .PP
 .RE
-\fIdoc/tasks/archive/<YYYY>/<YYYY\-MM>.\&tm.\&md\fR
+\fI.\&tasks/archive/<YYYY>/<YYYY\-MM>.\&tm.\&md\fR
 .RS 4
 Sections aged out of \fIcompleted.\&tm.\&md\fR.\& Tool\-managed; never
 hand\-authored, and never rewritten once written.\&
@@ -162,7 +162,7 @@ from two locations, each optional:
 .PP
 .nf
 .RS 4
-tasks_dir: doc/tasks
+tasks_dir: \&.tasks
 active_file: active\&.tm\&.md
 future_file: future\&.tm\&.md
 completed_file: completed\&.tm\&.md
@@ -172,7 +172,9 @@ archive_dir: archive
 .PP
 Resolution is per key, highest priority first: an explicit command\-line
 option, the local file, the global file, then the built\-in default shown
-above.\& An absent file, an absent key, or an unparseable line falls back
+above.\& When \fBtasks_dir\fR is not set anywhere and \fI.\&/.\&tasks\fR does not
+exist but \fI.\&/doc/tasks\fR (the pre\-0.\&4 default) does, \fI.\&/doc/tasks\fR is used.\&
+An absent file, an absent key, or an unparseable line falls back
 silently to the next source.\& See \fIdoc/taskmark_spec.\&md\fR §10 for the full
 resolution order and the additional hub\-related keys.\&
 .PP

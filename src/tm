@@ -2,7 +2,7 @@
 -- tm — universal taskmark utility (SPEC-TASKMARK-03)
 --
 -- Dispatches subcommands to the taskmark modules in this repository:
---   tm init       Bootstrap a project's doc/tasks/ directory with starter files
+--   tm init       Bootstrap a project's .tasks/ directory with starter files
 --   tm sweep      Move completed tasks from active.tm.md into completed.tm.md
 --   tm rotate     A sweep, then bump active.tm.md's sprint/date frontmatter
 --   tm archive    Archive aged-out sections from completed.tm.md into archive/
@@ -62,7 +62,7 @@ Usage:
   tm <command> [options]
 
 Commands:
-  init       Bootstrap doc/tasks/ with starter active.tm.md/future.tm.md/
+  init       Bootstrap .tasks/ with starter active.tm.md/future.tm.md/
              completed.tm.md files
   sweep      Move every completed task from active.tm.md into completed.tm.md
   rotate     A sweep, then bump active.tm.md's sprint/date frontmatter

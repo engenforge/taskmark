@@ -61,7 +61,7 @@ end
 
 do
     local dir = make_temp_dir("tminit_fresh")
-    local tasks_dir = dir .. "/doc/tasks"
+    local tasks_dir = dir .. "/.tasks"
     local output, exit_code = run_tm(string.format("init --tasks-dir %s", tasks_dir))
 
     check("fresh_init", "exits 0", exit_code == 0)
@@ -110,7 +110,7 @@ end
 
 do
     local dir = make_temp_dir("tminit_idempotent")
-    local tasks_dir = dir .. "/doc/tasks"
+    local tasks_dir = dir .. "/.tasks"
 
     -- First run
     run_tm(string.format("init --tasks-dir %s", tasks_dir))
@@ -137,7 +137,7 @@ end
 
 do
     local dir = make_temp_dir("tminit_partial")
-    local tasks_dir = dir .. "/doc/tasks"
+    local tasks_dir = dir .. "/.tasks"
     os.execute("mkdir -p " .. tasks_dir)
 
     -- Custom active.tm.md with tasks and specific frontmatter

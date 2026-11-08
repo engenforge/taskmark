@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Default task directory is now `.tasks/`** (was `doc/tasks/`), the recommended mount point for an orphan `tasks` branch worktree. A project with only `doc/tasks/` keeps resolving there when `tasks_dir` is not configured; run `git mv doc/tasks .tasks` (or set `tasks_dir: doc/tasks` in `.taskmarkrc`) to settle it.
+
+### Fixed
+- **Atomic writes:** temp files are uniquely named per write, a short write or failed flush never replaces the original, and `tm validate --fix` now uses the same writer (preserving CRLF documents).
+- **Concurrent runs:** `sweep`, `rotate`, `archive`, and `validate --fix` hold a short-lived `.tm.lock` on the task directory so concurrent runs wait instead of losing updates.
+
+---
+
 ## [0.3.0] - 2026-10-27
 
 ### Changed

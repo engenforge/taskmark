@@ -31,9 +31,9 @@ Exit codes:
   1  Validation failed or file error
 
 Examples:
-  tm validate doc/tasks/active.tm.md
-  tm validate --fix doc/tasks/active.tm.md
-  tm validate doc/tasks/active.tm.md doc/tasks/future.tm.md
+  tm validate .tasks/active.tm.md
+  tm validate --fix .tasks/active.tm.md
+  tm validate .tasks/active.tm.md .tasks/future.tm.md
 ]])
     os.exit(0)
 end

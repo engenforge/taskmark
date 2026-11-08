@@ -1,7 +1,7 @@
 #!/usr/bin/env lua
 -- tmconfig — SPEC-TASKMARK-03 §10 configuration resolution.
 --
--- Resolves the on-disk paths tm's subcommands operate on (the doc/tasks/
+-- Resolves the on-disk paths tm's subcommands operate on (the .tasks/
 -- directory itself, active.tm.md/future.tm.md/completed.tm.md, the archive/
 -- subdirectory name, and the hub locations) from, per key, in order of
 -- precedence:
@@ -30,13 +30,14 @@ do
 end
 
 local tmmeta = require("tmmeta")
+local tmio   = require("tmio")
 
 local M = {}
 
 -- Conventional paths this spec has always used, unchanged when no
 -- configuration is present.
 M.DEFAULTS = {
-    tasks_dir      = "doc/tasks",
+    tasks_dir      = ".tasks",
     active_file    = "active.tm.md",
     future_file    = "future.tm.md",
     completed_file = "completed.tm.md",
@@ -49,6 +50,11 @@ M.DEFAULTS = {
 }
 
 M.CONFIG_FILENAME = ".taskmarkrc"
+
+-- The pre-0.4 default task directory. Used only when tasks_dir is not
+-- configured anywhere, the default directory does not exist, and this one
+-- does -- so an existing project keeps working after upgrading.
+M.LEGACY_TASKS_DIR = "doc/tasks"
 
 -- The global config file path: overrides.global_config_path, if given,
 -- names an alternate file to load instead (mainly for tests).
@@ -113,6 +119,12 @@ function M.resolve(overrides)
     local cfg = {}
     for key, default in pairs(M.DEFAULTS) do
         cfg[key] = overrides[key] or local_cfg[key] or global_cfg[key] or default
+    end
+
+    if not (overrides.tasks_dir or local_cfg.tasks_dir or global_cfg.tasks_dir)
+        and not tmio.dir_exists(cfg.tasks_dir)
+        and tmio.dir_exists(M.LEGACY_TASKS_DIR) then
+        cfg.tasks_dir = M.LEGACY_TASKS_DIR
     end
 
     cfg.active_path    = cfg.tasks_dir .. "/" .. cfg.active_file

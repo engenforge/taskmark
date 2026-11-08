@@ -13,6 +13,16 @@ function M.file_exists(path)
     return true
 end
 
+function M.dir_exists(path)
+    if not path or path == "" then return false end
+    local f = io.open(path .. "/.", "r")
+    if f then
+        f:close()
+        return true
+    end
+    return false
+end
+
 -- Quote a string for safe inclusion in a shell command.
 function M.shell_quote(s)
     return "'" .. tostring(s):gsub("'", "'\\''") .. "'"

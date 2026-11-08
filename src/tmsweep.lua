@@ -23,7 +23,7 @@ Usage:
           [--tasks-dir DIR] [active.tm.md [completed.tm.md]]
   tmsweep -h | --help
 
-  Manage task lifecycle across doc/tasks/ documents:
+  Manage task lifecycle across .tasks/ documents:
 
   --sweep      Move every `- [x]` task and its payload out of active.tm.md
                into completed.tm.md. Headings and top-level prose are never
@@ -49,7 +49,7 @@ Options:
                 with --rotate
   --archive     Archive aged-out sections from completed.tm.md to archive/
   --dry-run     Report what would move and change nothing
-  --tasks-dir   Directory holding the task files (default: doc/tasks, or
+  --tasks-dir   Directory holding the task files (default: .tasks, or
                 the tasks_dir set in .taskmarkrc -- see SPEC-TASKMARK-03 §10)
   -h, --help    Show this help
 ]=]
@@ -130,7 +130,7 @@ local function M_run(args)
 
     -- Resolve file paths. A positional active.tm.md (and optional
     -- completed.tm.md) wins; otherwise derive both from --tasks-dir /
-    -- .taskmarkrc / the built-in doc/tasks default (SPEC-TASKMARK-03 §10).
+    -- .taskmarkrc / the built-in .tasks default (SPEC-TASKMARK-03 §10).
     local cfg = tmconfig.resolve({ tasks_dir = tasks_dir })
     local active_path, completed_path
     if #positionals >= 1 then

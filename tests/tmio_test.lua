@@ -39,6 +39,22 @@ do
     check("file_exists", "returns false for nonexistent file", tmio.file_exists(test_sandbox .. "/no_such_file.txt") == false)
 end
 
+-- ── dir_exists ─────────────────────────────────────────────────────────────
+
+do
+    local test_dir = test_sandbox .. "/test_dir"
+    local regular_file = test_sandbox .. "/regular.txt"
+    tmio.mkdir_p(test_dir)
+    local f = io.open(regular_file, "w")
+    f:write("content")
+    f:close()
+
+    check("dir_exists", "returns true for existing directory", tmio.dir_exists(test_dir) == true)
+    check("dir_exists", "returns false for regular file", tmio.dir_exists(regular_file) == false)
+    check("dir_exists", "returns false for nonexistent path", tmio.dir_exists(test_sandbox .. "/no_such_dir") == false)
+    check("dir_exists", "returns false for nil and empty string", tmio.dir_exists(nil) == false and tmio.dir_exists("") == false)
+end
+
 -- ── shell_quote ────────────────────────────────────────────────────────────
 
 do
