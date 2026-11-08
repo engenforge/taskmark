@@ -8,10 +8,12 @@ tm - universal taskmark utility
 
 # DESCRIPTION
 *tm* is the command-line interface for SPEC-TASKMARK-04 taskmark files. It
-provides subcommands to sweep completed tasks between task documents,
-archive aged-out sections, validate files for spec compliance, and
-filter arbitrary text into and out of a payload block. The specification it
-implements is documented in _doc/taskmark_spec.md_.
+provides subcommands for atomic task mutations, compact task listings with
+ephemeral hex handles, sweeping completed tasks between task documents in
+strict reverse chronological order, archiving aged-out sections, validating
+files for spec compliance, and filtering arbitrary text into and out of a
+payload block. The specification it implements is documented in
+_doc/taskmark_spec.md_.
 
 Unless a path is given, *tm* operates on the _.tasks_ directory relative to
 the current working directory (the layout described by the spec).
@@ -21,13 +23,42 @@ the current working directory (the layout described by the spec).
 	Bootstrap _.tasks_ with starter _active.tm.md_, _future.tm.md_, and
 	_completed.tm.md_ files. Never overwrites a file that already exists.
 
+*list* [--pending|--all] [--tasks-dir _DIR_] [_file_...]
+	Print one line per task, its handle and summary, e.g.
+	"[f4a1] (A) Task text", without payload blocks, to keep listings short
+	for humans and AI agents alike. By default, lists pending tasks from the
+	active task document. With *--all*, lists both pending and completed
+	tasks (completed tasks marked `[x]`). Given several files, each listing
+	is headed `== <file>`. A missing file is an error.
+
+*add* _<task-text>_ [-p|--priority _PRI_] [--section _SECTION_] [--file _FILE_] [--tasks-dir _DIR_]
+	Add a pending task at the end of the named section's own content
+	(before its first subheading), or of the first heading's when no
+	*--section* is given. An unknown section or a missing file is an error;
+	no file is ever created. *-p A* adds the `(A)` priority flag.
+
+*done* _<hash-or-pattern>_ [--git [_REV_]] [--file _FILE_] [--tasks-dir _DIR_]
+	Find a pending task in _active.tm.md_ (or *--file*) by handle or
+	substring (see TASK HANDLES), mark it `- [x]` in place, and stamp a
+	Completed field with the local date into the leading run of its
+	labeled fields, adding `git:<sha>` with *--git*. Only pending tasks are
+	candidates; a match that is already completed is reported as such.
+
+*move* _<hash-or-pattern>_ [--from _FILE_] [--to _FILE_] [--section _SECTION_] [--tasks-dir _DIR_]
+	Move a task and its payload from one file to another (by default from
+	_future.tm.md_ to _active.tm.md_), or to another section of the same
+	file, placed as for *add*. The destination is written before the task
+	is removed from the source, so an interrupted move leaves a duplicate,
+	never a loss. The destination must exist.
+
 *sweep*
 	Move every `- [x]` task and its payload out of _active.tm.md_ and into
 	_completed.tm.md_, bucketed under a "## YYYY-MM" section for the month
 	of the sweep, or "## Sprint _LABEL_" with *--sprint*. Tasks within a
-	section and sections within the file are kept newest first. Headings
-	and top-level prose in _active.tm.md_ are never swept, even when every
-	task beneath them is done. _future.tm.md_ is never read or written.
+	section and sections within the file are kept in strict reverse chronological
+	order (newest completed first). Headings and top-level prose in _active.tm.md_
+	are never swept, even when every task beneath them is done. _future.tm.md_
+	is never read or written.
 
 *archive*
 	Move sections aged out of _completed.tm.md_ into
@@ -66,6 +97,37 @@ the current working directory (the layout described by the spec).
 	Print the version and exit.
 
 # OPTIONS
+*--pending*
+	With *list*: output only pending tasks (the default).
+
+*--all*
+	With *list*: output both pending and completed tasks. Completed tasks are
+	marked with `[x]`.
+
+*-p*, *--priority* _PRI_
+	With *add*: assign a priority flag `(A)`-`(Z)` to the task.
+
+*--section* _SECTION_
+	With *add* and *move*: heading (matched case-insensitively) whose own
+	content the task is appended to. Must exist.
+
+*--file* _FILE_
+	Target file to operate on. Defaults to the configured active file.
+
+*--from* _FILE_
+	With *move*: source file to move the task from (defaults to _future.tm.md_).
+
+*--to* _FILE_
+	With *move*: destination file to move the task to (defaults to _active.tm.md_).
+
+*--git* [_REV_]
+	With *done*: record the short SHA of _REV_ (default *HEAD*) in the
+	Completed field, e.g. `> **Completed:** YYYY-MM-DD git:<sha>`. _REV_
+	must name a commit in the current repository. The word after *--git* is
+	taken as _REV_ only when the command would otherwise have two
+	arguments, so `tm done --git abc1234 parser` and `tm done parser --git`
+	both work; `--git=`_REV_ is always unambiguous.
+
 *--sprint* _LABEL_
 	With *sweep*: bucket the swept tasks under "## Sprint _LABEL_" instead
 	of the current month.
@@ -80,6 +142,23 @@ the current working directory (the layout described by the spec).
 
 *-h*, *--help*
 	Show help for the command.
+
+# TASK HANDLES
+Task files carry no IDs or numbering. Instead *tm* derives a deterministic
+8-hex-digit hash from each task's summary (the task line minus its checkbox
+and outer whitespace, so it survives *tm done*), and shows its shortest
+prefix of at least 4 digits that is unique within the file as the task's
+_handle_, e.g. `[f4a1]`. Editing a task's text changes its handle.
+
+*done* and *move* accept:
+- A handle, or any longer prefix of the same hash, with or without
+  brackets. A prefix shared by several tasks is rejected, listing each
+  candidate with its own unique handle.
+- Otherwise, a case-insensitive substring of the task summary. A substring
+  matching several tasks is likewise rejected with the candidates listed.
+
+Two tasks with identical summaries share a hash; make their text differ to
+address them separately.
 
 # FILES
 _.tasks/active.tm.md_
@@ -96,9 +175,9 @@ _.tasks/archive/<YYYY>/<YYYY-MM>.tm.md_
 	never hand-authored.
 
 _<tasks-dir>/.tm.lock_
-	Transient lock directory held by *sweep*, *archive*, and
-	*validate --fix* for the duration of their read-modify-write, so
-	concurrent *tm* runs wait for each other instead of losing updates.
+	Transient lock directory held by *add*, *done*, *move*, *sweep*,
+	*archive*, and *validate --fix* for the duration of their read-modify-write,
+	so concurrent *tm* runs wait for each other instead of losing updates.
 	A stale lock left by a killed process may be removed by hand.
 
 # CONFIGURATION

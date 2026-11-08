@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Task mutations and compact listings (`tm list`, `tm add`, `tm done`, `tm move`):**
+  - **Ephemeral handles:** each task is addressed by the shortest prefix (at least 4 hex digits) of a hash of its summary that is unique in its file; nothing is written to the task files. The hash ignores checkbox state, so a handle survives `tm done`. Ambiguous handles or substring patterns are rejected with each candidate's unique handle listed.
+  - **`tm list [--pending|--all]`:** one line per task, without payloads.
+  - **`tm done <handle|pattern> [--git [REV]]`:** marks a *pending* task `- [x]` and stamps `> **Completed:** YYYY-MM-DD [git:<sha>]` (local date) into its leading field run; REV must be a commit in the repository.
+  - **`tm move <handle|pattern> [--from F] [--to T] [--section S]`:** moves a task between files or between sections of one file; the destination is written first.
+  - **`tm add <text> [-p PRI] [--section S]`:** adds a task under the first heading or a named section.
+  - `add`, `done`, and `move` hold the task-directory lock; an unknown `--section` or missing file is an error and no file is created.
+- **Sweep batch order:** tasks swept together are ordered newest first by their own `Completed` dates.
+
 ### Changed
 - **Transition to Pure CommonMark (SPEC-TASKMARK-04):**
   - **Removed Frontmatter from Task Files:** Taskmark files (`active.tm.md`, `future.tm.md`, `completed.tm.md`, `archive/<YYYY>/<YYYY-MM>.tm.md`) now start immediately on line 1 with standard Markdown headings. Frontmatter blocks (`---`) are eliminated, removing syntax friction and parsing ambiguities.

@@ -10,6 +10,7 @@ INIT_TEST       = tests/tminit_test.lua
 CONFIG_TEST     = tests/tmconfig_test.lua
 FILTER_TEST     = tests/tmfilter_test.lua
 IO_TEST         = tests/tmio_test.lua
+MUTATE_TEST     = tests/tmmutate_test.lua
 COMMONMARK_TEST = tests/commonmark_test.lua
 
 PREFIX   ?= /usr/local
@@ -75,7 +76,7 @@ REPRO_TAR        = $(TAR) --sort=name --format=gnu --mtime=@$(SOURCE_DATE_EPOCH)
 
 # The Lua modules installed under $(SHAREDIR); src/tm (the dispatcher) is
 # installed separately, to $(BINDIR).
-MODULES = tmmeta.lua tmscan.lua tmconfig.lua tmval.lua tmsweep.lua tmsweep_core.lua tmfilter.lua tminit.lua tmio.lua
+MODULES = tmmeta.lua tmscan.lua tmconfig.lua tmval.lua tmsweep.lua tmsweep_core.lua tmfilter.lua tminit.lua tmio.lua tmmutate.lua
 
 UNAME_S := $(shell uname -s)
 
@@ -146,6 +147,8 @@ test: build/cmark.so check-modules
 	@$(LUA) $(FILTER_TEST)
 	@echo "=== tm io Test Suite ==="
 	@$(LUA) $(IO_TEST)
+	@echo "=== tm mutate Test Suite ==="
+	@$(LUA) $(MUTATE_TEST)
 	@echo "=== CommonMark Conformance Oracle ==="
 	@$(LUA) $(COMMONMARK_TEST)
 	@echo "=== Man pages match their scdoc sources ==="

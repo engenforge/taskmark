@@ -196,19 +196,42 @@ local function join_chunks(chunks)
     return block
 end
 
+-- Extract the Completed date from a task block's lines, or nil if none.
+local function task_completed_date(block_lines)
+    if not block_lines then return nil end
+    for _, line in ipairs(block_lines) do
+        local date = line:match("^%s*> %*%*Completed:%*%* (%d%d%d%d%-%d%d%-%d%d)")
+        if date then return date end
+    end
+    return nil
+end
+
 -- Insert moved task blocks into completed_lines, newest first (§6.3).
 --
--- The document title is the first heading when it is level 1 (its text is
--- never matched). The *top section* is the first heading beneath the title,
--- or the first heading of all when there is no title. When `sprint_label`
--- names a heading ("## Sprint <label>", or "## <YYYY-MM>" as given) that is
--- already the top section, the blocks are prepended into it, directly
--- beneath its heading. Otherwise a new section is inserted at the top:
--- beneath the title, or above the first heading when there is no title, or
--- after any preamble prose when there are no headings at all. Content
--- inside each moved block is preserved verbatim; blank lines are normalized.
+-- The blocks of one sweep are ordered newest first by their own
+-- `Completed` date; blocks with equal or no dates keep their document
+-- order, dateless ones last. The document title is the first heading when
+-- it is level 1 (its text is never matched). The *top section* is the
+-- first heading beneath the title, or the first heading of all when there
+-- is no title. When `sprint_label` names a heading ("## Sprint <label>",
+-- or "## <YYYY-MM>" as given) that is already the top section, the blocks
+-- are prepended into it, directly beneath its heading. Otherwise a new
+-- section is inserted at the top -- never ordered by heading text, which
+-- does not sort chronologically ("Sprint S10" < "Sprint S9") -- beneath the
+-- title, or above the first heading when there is no title, or after any
+-- preamble prose when there are no headings at all. Content inside each
+-- moved block is preserved verbatim; blank lines are normalized.
 function M.insert_into_completed(completed_lines, moved_blocks, sprint_label)
     if not moved_blocks or #moved_blocks == 0 then return completed_lines end
+
+    local sorted_blocks = {}
+    for idx, mb in ipairs(moved_blocks) do
+        sorted_blocks[#sorted_blocks + 1] = { mb = mb, date = task_completed_date(mb.lines) or "", idx = idx }
+    end
+    table.sort(sorted_blocks, function(a, b)
+        if a.date ~= b.date then return a.date > b.date end
+        return a.idx < b.idx
+    end)
 
     local sprint_heading
     if sprint_label and sprint_label ~= "" then
@@ -236,7 +259,10 @@ function M.insert_into_completed(completed_lines, moved_blocks, sprint_label)
         end
         if sprint_heading then chunks[#chunks + 1] = { "## " .. sprint_heading } end
     end
-    for _, mb in ipairs(moved_blocks) do chunks[#chunks + 1] = mb.lines end
+
+    for _, item in ipairs(sorted_blocks) do
+        chunks[#chunks + 1] = item.mb.lines
+    end
 
     return M.normalize_blank_lines(splice_with_seams(completed_lines, insert_at, join_chunks(chunks)))
 end

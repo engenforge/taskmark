@@ -63,6 +63,10 @@ Usage:
 Commands:
   init       Bootstrap .tasks/ with starter active.tm.md/future.tm.md/
              completed.tm.md files
+  list       Stream compact task summaries with 4-char ephemeral hash handles
+  add        Safely add a task under the target heading
+  done       Mark a pending task completed with ISO date and optional git SHA
+  move       Promote/move a task non-destructively between task documents
   sweep      Move every completed task from active.tm.md into completed.tm.md
              (newest first; --sprint LABEL buckets under ## Sprint LABEL)
   archive    Archive sections aged out of completed.tm.md into
@@ -102,6 +106,8 @@ elseif cmd == "version" or cmd == "--version" then
     os.exit(0)
 elseif cmd == "init" then
     require("tminit").run(rest)
+elseif cmd == "list" or cmd == "done" or cmd == "move" or cmd == "add" then
+    require("tmmutate").run(cmd, rest)
 elseif cmd == "sweep" then
     require("tmsweep").run({ "--sweep", table.unpack(rest) })
 elseif cmd == "rotate" then

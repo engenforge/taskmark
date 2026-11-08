@@ -222,6 +222,10 @@ do
     check("lock", "with_lock re-raises errors", not pok and tostring(perr):find("boom", 1, true) ~= nil)
     check("lock", "with_lock releases after an error", not tmio.file_exists(dir .. "/.tm.lock"))
     check("lock", "with_lock returns fn's results", tmio.with_lock(dir, function() return 42 end) == 42)
+    local r1, r2, r3 = tmio.with_lock(dir, function() return nil, 2, nil end)
+    check("lock", "with_lock returns every result, including nils", r1 == nil and r2 == 2 and r3 == nil)
+    check("lock", "with_lock keeps the result count",
+        select("#", tmio.with_lock(dir, function() return nil, nil, 3 end)) == 3)
 
     -- die() (os.exit) inside a held lock must not leave it stale.
     local src = script_dir .. "/../src"

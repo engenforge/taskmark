@@ -15,10 +15,12 @@ tm \- universal taskmark utility
 .PP
 .SH DESCRIPTION
 \fBtm\fR is the command\-line interface for SPEC\-TASKMARK\-04 taskmark files.\& It
-provides subcommands to sweep completed tasks between task documents,
-archive aged\-out sections, validate files for spec compliance, and
-filter arbitrary text into and out of a payload block.\& The specification it
-implements is documented in \fIdoc/taskmark_spec.\&md\fR.\&
+provides subcommands for atomic task mutations, compact task listings with
+ephemeral hex handles, sweeping completed tasks between task documents in
+strict reverse chronological order, archiving aged\-out sections, validating
+files for spec compliance, and filtering arbitrary text into and out of a
+payload block.\& The specification it implements is documented in
+\fIdoc/taskmark_spec.\&md\fR.\&
 .PP
 Unless a path is given, \fBtm\fR operates on the \fI.\&tasks\fR directory relative to
 the current working directory (the layout described by the spec).\&
@@ -30,14 +32,51 @@ Bootstrap \fI.\&tasks\fR with starter \fIactive.\&tm.\&md\fR, \fIfuture.\&tm.\&m
 \fIcompleted.\&tm.\&md\fR files.\& Never overwrites a file that already exists.\&
 .PP
 .RE
+\fBlist\fR [\-\-pending|\-\-all] [\-\-tasks\-dir \fIDIR\fR] [\fIfile\fR.\&.\&.\&]
+.RS 4
+Print one line per task, its handle and summary, e.\&g.\&
+"[f4a1] (A) Task text", without payload blocks, to keep listings short
+for humans and AI agents alike.\& By default, lists pending tasks from the
+active task document.\& With \fB\-\-all\fR, lists both pending and completed
+tasks (completed tasks marked `[x]`).\& Given several files, each listing
+is headed `== <file>`.\& A missing file is an error.\&
+.PP
+.RE
+\fBadd\fR \fI<task\-text>\fR [\-p|\-\-priority \fIPRI\fR] [\-\-section \fISECTION\fR] [\-\-file \fIFILE\fR] [\-\-tasks\-dir \fIDIR\fR]
+.RS 4
+Add a pending task at the end of the named section'\&s own content
+(before its first subheading), or of the first heading'\&s when no
+\fB\-\-section\fR is given.\& An unknown section or a missing file is an error;
+no file is ever created.\& \fB\-p A\fR adds the `(A)` priority flag.\&
+.PP
+.RE
+\fBdone\fR \fI<hash\-or\-pattern>\fR [\-\-git [\fIREV\fR]] [\-\-file \fIFILE\fR] [\-\-tasks\-dir \fIDIR\fR]
+.RS 4
+Find a pending task in \fIactive.\&tm.\&md\fR (or \fB\-\-file\fR) by handle or
+substring (see TASK HANDLES), mark it `\- [x]` in place, and stamp a
+Completed field with the local date into the leading run of its
+labeled fields, adding `git:<sha>` with \fB\-\-git\fR.\& Only pending tasks are
+candidates; a match that is already completed is reported as such.\&
+.PP
+.RE
+\fBmove\fR \fI<hash\-or\-pattern>\fR [\-\-from \fIFILE\fR] [\-\-to \fIFILE\fR] [\-\-section \fISECTION\fR] [\-\-tasks\-dir \fIDIR\fR]
+.RS 4
+Move a task and its payload from one file to another (by default from
+\fIfuture.\&tm.\&md\fR to \fIactive.\&tm.\&md\fR), or to another section of the same
+file, placed as for \fBadd\fR.\& The destination is written before the task
+is removed from the source, so an interrupted move leaves a duplicate,
+never a loss.\& The destination must exist.\&
+.PP
+.RE
 \fBsweep\fR
 .RS 4
 Move every `\- [x]` task and its payload out of \fIactive.\&tm.\&md\fR and into
 \fIcompleted.\&tm.\&md\fR, bucketed under a "## YYYY\-MM" section for the month
 of the sweep, or "## Sprint \fILABEL\fR" with \fB\-\-sprint\fR.\& Tasks within a
-section and sections within the file are kept newest first.\& Headings
-and top\-level prose in \fIactive.\&tm.\&md\fR are never swept, even when every
-task beneath them is done.\& \fIfuture.\&tm.\&md\fR is never read or written.\&
+section and sections within the file are kept in strict reverse chronological
+order (newest completed first).\& Headings and top\-level prose in \fIactive.\&tm.\&md\fR
+are never swept, even when every task beneath them is done.\& \fIfuture.\&tm.\&md\fR
+is never read or written.\&
 .PP
 .RE
 \fBarchive\fR
@@ -89,6 +128,53 @@ Print the version and exit.\&
 .PP
 .RE
 .SH OPTIONS
+\fB\-\-pending\fR
+.RS 4
+With \fBlist\fR: output only pending tasks (the default).\&
+.PP
+.RE
+\fB\-\-all\fR
+.RS 4
+With \fBlist\fR: output both pending and completed tasks.\& Completed tasks are
+marked with `[x]`.\&
+.PP
+.RE
+\fB\-p\fR, \fB\-\-priority\fR \fIPRI\fR
+.RS 4
+With \fBadd\fR: assign a priority flag `(A)`\-`(Z)` to the task.\&
+.PP
+.RE
+\fB\-\-section\fR \fISECTION\fR
+.RS 4
+With \fBadd\fR and \fBmove\fR: heading (matched case\-insensitively) whose own
+content the task is appended to.\& Must exist.\&
+.PP
+.RE
+\fB\-\-file\fR \fIFILE\fR
+.RS 4
+Target file to operate on.\& Defaults to the configured active file.\&
+.PP
+.RE
+\fB\-\-from\fR \fIFILE\fR
+.RS 4
+With \fBmove\fR: source file to move the task from (defaults to \fIfuture.\&tm.\&md\fR).\&
+.PP
+.RE
+\fB\-\-to\fR \fIFILE\fR
+.RS 4
+With \fBmove\fR: destination file to move the task to (defaults to \fIactive.\&tm.\&md\fR).\&
+.PP
+.RE
+\fB\-\-git\fR [\fIREV\fR]
+.RS 4
+With \fBdone\fR: record the short SHA of \fIREV\fR (default \fBHEAD\fR) in the
+Completed field, e.\&g.\& `> \fB\fRCompleted:\fB\fR YYYY\-MM\-DD git:<sha>`.\& \fIREV\fR
+must name a commit in the current repository.\& The word after \fB\-\-git\fR is
+taken as \fIREV\fR only when the command would otherwise have two
+arguments, so `tm done \-\-git abc1234 parser` and `tm done parser \-\-git`
+both work; `\-\-git=`\fIREV\fR is always unambiguous.\&
+.PP
+.RE
 \fB\-\-sprint\fR \fILABEL\fR
 .RS 4
 With \fBsweep\fR: bucket the swept tasks under "## Sprint \fILABEL\fR" instead
@@ -112,6 +198,27 @@ Directory holding the task files.\& Defaults to \fI.\&/.\&tasks\fR, or the
 Show help for the command.\&
 .PP
 .RE
+.SH TASK HANDLES
+Task files carry no IDs or numbering.\& Instead \fBtm\fR derives a deterministic
+8\-hex\-digit hash from each task'\&s summary (the task line minus its checkbox
+and outer whitespace, so it survives \fBtm done\fR), and shows its shortest
+prefix of at least 4 digits that is unique within the file as the task'\&s
+\fIhandle\fR, e.\&g.\& `[f4a1]`.\& Editing a task'\&s text changes its handle.\&
+.PP
+\fBdone\fR and \fBmove\fR accept:
+.PD 0
+.IP \(bu 4
+A handle, or any longer prefix of the same hash, with or without
+brackets.\& A prefix shared by several tasks is rejected, listing each
+candidate with its own unique handle.\&
+.IP \(bu 4
+Otherwise, a case\-insensitive substring of the task summary.\& A substring
+matching several tasks is likewise rejected with the candidates listed.\&
+.PD
+.PP
+Two tasks with identical summaries share a hash; make their text differ to
+address them separately.\&
+.PP
 .SH FILES
 \fI.\&tasks/active.\&tm.\&md\fR
 .RS 4
@@ -136,9 +243,9 @@ never hand\-authored.\&
 .RE
 \fI<tasks\-dir>/.\&tm.\&lock\fR
 .RS 4
-Transient lock directory held by \fBsweep\fR, \fBarchive\fR, and
-\fBvalidate \-\-fix\fR for the duration of their read\-modify\-write, so
-concurrent \fBtm\fR runs wait for each other instead of losing updates.\&
+Transient lock directory held by \fBadd\fR, \fBdone\fR, \fBmove\fR, \fBsweep\fR,
+\fBarchive\fR, and \fBvalidate \-\-fix\fR for the duration of their read\-modify\-write,
+so concurrent \fBtm\fR runs wait for each other instead of losing updates.\&
 A stale lock left by a killed process may be removed by hand.\&
 .PP
 .RE

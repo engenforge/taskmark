@@ -294,6 +294,8 @@ At the beginning of a working session, read `.tasks/active.tm.md` and choose the
 
 The `Completed` field MUST carry an ISO date. The short git hash of the implementing commit (`git:<sha>`, 7–40 hex characters) MUST be present whenever the task involved a commit, so the archive stays auditable against history, and MUST be omitted for a task completed outside of coding.
 
+Steps 2 and 3 are a single mechanical edit, and are best left to a tool (the reference CLI's `tm done`) so that the token, indent, and field placement come out right every time.
+
 A recorded hash names the commit as it stood when the task was stamped. Rewriting history afterward — squash, amend, rebase — can leave it pointing at nothing. Taskmark neither detects nor repairs this, so it is worth keeping in mind when stamping work that has not yet reached its final form.
 
 The completed task stays in place in `active.tm.md` until it is swept.
@@ -398,6 +400,7 @@ The **document title** is the first heading in the file when it is level 1 (e.g.
 * If the top section is the matching section, newly completed tasks are **prepended** into it, directly beneath its section heading.
 * Otherwise a new section heading is created at the top: directly beneath the title, or above the first heading when there is no title, or after any preamble prose when the file has no headings at all.
 * Older sections and tasks remain untouched below.
+* Tasks moved by one sweep are ordered newest first by their own `Completed` dates; tasks with equal or no dates keep their order from the active file.
 
 This guarantees that developers and AI coding agents inspect the latest accomplishments immediately without reading through an arbitrarily long file.
 

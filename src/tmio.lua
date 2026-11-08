@@ -94,16 +94,24 @@ function M.release_all_locks()
     end
 end
 
+local unpack = table.unpack or unpack
+
+-- Pack varargs with their count, so nil results survive (table.pack is 5.2+).
+local function pack(...)
+    return { n = select("#", ...), ... }
+end
+
 -- Run fn(...) while holding the lock on `dir`; dies if the lock cannot be
 -- acquired. The lock is released whether fn returns or raises (and by die(),
--- since os.exit bypasses the release here).
+-- since os.exit bypasses the release here). Returns every result of fn,
+-- nils included.
 function M.with_lock(dir, fn, ...)
     local ok, err = M.acquire_lock(dir)
     if not ok then M.die(err) end
-    local pok, result = pcall(fn, ...)
+    local ret = pack(pcall(fn, ...))
     M.release_lock(dir)
-    if not pok then error(result, 0) end
-    return result
+    if not ret[1] then error(ret[2], 0) end
+    return unpack(ret, 2, ret.n)
 end
 
 function M.die(msg)

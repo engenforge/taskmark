@@ -99,15 +99,14 @@ Optional conventions adapted from `todo.txt`, layered onto the existing task/pay
 
 ### Task Lifecycle
 
-1. **Session Start:** Read `.tasks/active.tm.md` and pick the first pending task (`- [ ]`).
-2. **Task Completion:**
+1. **Session Start:** Read `.tasks/active.tm.md` or inspect tasks compactly with `tm list`.
+2. **Task Creation:** Add new work with `tm add "Task description" -p A` (directly under the first heading, or `--section <name>`).
+3. **Task Promotion:** Promote planned items from backlog to active with `tm move <handle>` (defaults from `future.tm.md` to `active.tm.md`).
+4. **Task Completion:**
    - Commit code changes to git, if any.
-   - Mark task as `- [x]`.
-   - Append `> **Completed:** YYYY-MM-DD` payload at 4-space indentation, adding
-     `git:<short-sha>` whenever the task involved a commit.
-3. **Sweep:** Run `tm sweep` to move completed tasks (each with its own payload) into `completed.tm.md` in reverse chronological order under a `## YYYY-MM` heading for the month of the sweep (or `## Sprint <id>` with `--sprint <id>`). Pending tasks, headings, and top-level prose stay put.
-4. **Planning:** Nothing is ever promoted out of `future.tm.md` automatically; moving planned work into active work is always a deliberate edit.
-5. **Archival:** Run `tm archive` periodically to move aged-out sections, newest first, to `.tasks/archive/<YYYY>/<YYYY-MM>.tm.md` — a section ages out once it is older than the 2 newest *and* its most recent `> **Completed:**` task is more than 14 days old.
+   - Run `tm done <handle> --git` to atomically mark the task completed (`- [x]`), record today's ISO date, and append `git:<sha>` (or run without `--git` for non-coding tasks).
+5. **Sweep:** Run `tm sweep` to move completed tasks (each with its own payload) into `completed.tm.md` in strict reverse chronological order under a `## YYYY-MM` heading for the month of the sweep (or `## Sprint <id>` with `--sprint <id>`). Pending tasks, headings, and top-level prose stay put.
+6. **Archival:** Run `tm archive` periodically to move aged-out sections, newest first, to `.tasks/archive/<YYYY>/<YYYY-MM>.tm.md` — a section ages out once it is older than the 2 newest *and* its most recent `> **Completed:**` task is more than 14 days old.
 
 ### Configuration
 
@@ -137,6 +136,10 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 | Command | Description |
 |---|---|
 | `tm init` | Bootstrap taskmark folder and starter files (`active.tm.md`, `future.tm.md`, `completed.tm.md`). |
+| `tm list [--pending\|--all]` | One line per task — its handle and summary (`[f4a1] (A) Task text`), no payloads. Handles are the shortest unique hash prefix of at least 4 hex digits. |
+| `tm add <text> [-p PRI] [--section S]` | Add a task to an existing file, under the first heading or the named section. |
+| `tm done <handle\|pattern> [--git [REV]]` | Mark a pending task completed, stamping the local date and optionally `git:<sha>` of REV (default `HEAD`). |
+| `tm move <handle\|pattern> [--from F] [--to T] [--section S]` | Move a task between files or sections (default: `future.tm.md` to `active.tm.md`); destination written first. |
 | `tm sweep [--sprint <id>]` | Move every completed task (with its payload) from `active.tm.md` to `completed.tm.md`, newest first, under `## YYYY-MM` (or `## Sprint <id>`). |
 | `tm archive` | Move sections aged out of `completed.tm.md` into `archive/<YYYY>/<YYYY-MM>.tm.md`. |
 | `tm validate [file...]` | Validate task file(s) against SPEC-TASKMARK-04 (defaults to the configured active file). |
@@ -147,6 +150,13 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 
 ### Global & Command Options
 
+- `--pending`: With `list`, stream only pending tasks (default).
+- `--all`: With `list`, stream both pending and completed tasks.
+- `-p, --priority <PRI>`: With `add`, assign priority `(A)`-`(Z)`.
+- `--section <SEC>`: With `add` or `move`, specify target heading.
+- `--git [REV]`: With `done`, record git commit SHA (`git:<sha>`, defaulting to `HEAD`).
+- `--from <FILE>`: With `move`, source file (default: `future.tm.md`).
+- `--to <FILE>`: With `move`, destination file (default: `active.tm.md`).
 - `--sprint <id>`: With `sweep`, bucket the swept tasks under `## Sprint <id>` instead of the current month.
 - `--dry-run`: Preview changes without modifying any files. Applies to `sweep` and `archive`.
 - `--tasks-dir <DIR>`: Path to task directory (defaults to `./.tasks`, or the `tasks_dir` set in [`.taskmarkrc`](#configuration)).
@@ -158,11 +168,27 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 # Bootstrap taskmark directory and starter files
 tm init
 
-# Bootstrap in a custom directory
-tm init --tasks-dir /path/to/repo/.tasks
+# List pending tasks, one line each, with their handles
+tm list
+
+# Add a high-priority task to the active sprint
+tm add "Implement socket timeout handling" -p A
+
+# Mark a task completed with the current commit's SHA (or a named commit)
+tm done f4a1 --git
+tm done "socket timeout" --git=abc1234
+
+# Promote task from backlog (future.tm.md) to active sprint (active.tm.md)
+tm move 8b12
 
 # Validate the active task list
 tm validate
+
+# Move completed tasks into the archive in reverse chronological order
+tm sweep
+
+# Preview a sweep into a named sprint section
+tm sweep --sprint 2026-S4 --dry-run
 
 # Validate a custom backlog file
 tm validate ~/tasks/backlog.tm.md

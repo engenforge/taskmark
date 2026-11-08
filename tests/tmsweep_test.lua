@@ -251,6 +251,47 @@ do
           not join(result):match("## Sprint"))
 end
 
+do
+    -- Multiple tasks swept together are ordered reverse-chronologically by completion date
+    local completed = lines_of([[
+# Completed Archive
+
+## 2026-11]])
+    local moved = {
+        { lines = { "- [x] Earlier task", "    > **Completed:** 2026-11-02 git:1111111" } },
+        { lines = { "- [x] Later task", "    > **Completed:** 2026-11-08 git:2222222" } },
+    }
+    local result = core.insert_into_completed(completed, moved, "2026-11")
+    local text = join(result)
+    check("insert_into_completed", "tasks within a sweep batch are ordered reverse-chronologically",
+          text:match("Later task.-Earlier task") ~= nil)
+end
+
+do
+    -- A new section always goes on top (§6.3), even above sections whose
+    -- headings sort after it as text -- e.g. a pre-0.4 file of "## Sprint"
+    -- sections, or Sprint S10 after S9.
+    local completed = lines_of([[
+# Completed Archive
+
+## Sprint 2026-S2
+
+- [x] s2 task
+
+## Sprint 2026-S1
+
+- [x] s1 task]])
+    local moved = { { lines = { "- [x] Fresh task" } } }
+    local text = join(core.insert_into_completed(completed, moved, "2026-11"))
+    check("insert_into_completed", "new month section lands above existing Sprint sections",
+          text:match("^# Completed Archive\n\n## 2026%-11\n\n%- %[x%] Fresh task\n\n## Sprint 2026%-S2") ~= nil, text)
+
+    completed = lines_of("# Completed\n\n## Sprint S9\n\n- [x] nine")
+    text = join(core.insert_into_completed(completed, { { lines = { "- [x] ten" } } }, "S10"))
+    check("insert_into_completed", "Sprint S10 lands above Sprint S9",
+          text:match("## Sprint S10.-## Sprint S9") ~= nil, text)
+end
+
 -- ── normalize_blank_lines() ──────────────────────────────────────────────
 
 do

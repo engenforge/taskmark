@@ -102,6 +102,46 @@ function M.iter(lines)
     end
 end
 
+-- The normalized summary of a task line: the line minus its checkbox token
+-- and outer whitespace, so it is the same before and after completion.
+function M.task_summary(str)
+    if not str then return "" end
+    local norm = str:gsub("^%s*%- %[[ xX]%]%s*", "")
+    norm = norm:gsub("^%s+", ""):gsub("%s+$", "")
+    return norm
+end
+
+local TWO32, TWO16 = 4294967296, 65536
+
+-- (a * b) mod 2^32 for 0 <= a, b < 2^32, exact in IEEE doubles (Lua 5.1+):
+-- splitting `a` into 16-bit halves keeps every partial product below 2^53.
+local function mul32(a, b)
+    local a_hi, a_lo = math.floor(a / TWO16), a % TWO16
+    return ((a_hi * b) % TWO16 * TWO16 + a_lo * b) % TWO32
+end
+
+-- Fold the high half into the low half (an arithmetic stand-in for xor-shift).
+local function fold16(h)
+    return (h + math.floor(h / TWO16)) % TWO32
+end
+
+-- Deterministic 8-hex-digit handle of a task line or summary (§ handles are
+-- ephemeral: never written to a file). DJB2 over the normalized summary,
+-- then a multiplicative finalizer: plain DJB2 changes only its low digits
+-- when the summaries differ near the end ("Phase 1" / "Phase 2"), and
+-- handles are read from the *leading* digits.
+function M.task_hash(str)
+    local norm = M.task_summary(str)
+    local h = 5381
+    for i = 1, #norm do
+        h = (h * 33 + norm:byte(i)) % TWO32
+    end
+    h = fold16(mul32(h, 2654435761))
+    h = fold16(mul32(h, 2246822507))
+    h = fold16(mul32(h, 3266489909))
+    return string.format("%08x", h)
+end
+
 -- Every task, with its payload's line range. A task's payload extends
 -- from the line after it through the last line that is either blank or
 -- payload-indented (§4.4.1); a task with no such lines has no payload,
@@ -129,6 +169,7 @@ function M.tasks(lines)
                 end
                 j = j + 1
             end
+            local summary = M.task_summary(lines[task_line])
             results[#results + 1] = {
                 line = task_line,
                 done = fields.done,
@@ -137,6 +178,8 @@ function M.tasks(lines)
                 heading = heading,
                 payload_start = had_payload_line and payload_start or nil,
                 payload_end = had_payload_line and (j - 1) or nil,
+                hash = M.task_hash(lines[task_line]),
+                summary = summary,
             }
             i = j
         else

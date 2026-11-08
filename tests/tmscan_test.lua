@@ -275,6 +275,28 @@ do
     check("parse_iso8601", "nil input returns nil", tmscan.parse_iso8601(nil) == nil)
 end
 
+-- ── task_hash ────────────────────────────────────────────────────────────
+
+do
+    local h1 = tmscan.task_hash("- [ ] (A) Runtime hardening: collision-safe atomic writes")
+    local h2 = tmscan.task_hash("- [x] (A) Runtime hardening: collision-safe atomic writes")
+    local h3 = tmscan.task_hash("(A) Runtime hardening: collision-safe atomic writes")
+    local h4 = tmscan.task_hash("  - [ ]   (A) Runtime hardening: collision-safe atomic writes  ")
+
+    check("task_hash", "returns 8-character hex string", type(h1) == "string" and #h1 == 8 and h1:match("^%x+$") ~= nil)
+    check("task_hash", "preserves hash across pending and completed checkbox state", h1 == h2)
+    check("task_hash", "matches bare summary without checkbox", h1 == h3)
+    check("task_hash", "ignores leading and trailing whitespace", h1 == h4)
+
+    local diff_hash = tmscan.task_hash("- [ ] Different task")
+    check("task_hash", "different tasks have different hashes", h1 ~= diff_hash)
+
+    local sample = tmscan.lines_of("# Header\n\n- [ ] (A) Test task\n    > **Context:** info\n")
+    local t = tmscan.tasks(sample)[1]
+    check("tasks", "task record carries hash", t and t.hash == tmscan.task_hash(sample[3]))
+    check("tasks", "task record carries summary", t and t.summary == "(A) Test task")
+end
+
 -- ── Summary ──────────────────────────────────────────────────────────────
 
 print(string.format("\nResults: %d passed, %d failed, %d total\n", passed, failed, passed + failed))
