@@ -236,6 +236,44 @@ do
     check("lock", "die releases held locks", not tmio.file_exists(dir .. "/.tm.lock"))
 end
 
+-- ── lock wait on a sleep(1) without fractional seconds ──────────────────────
+
+do
+    -- Strict POSIX sleep takes whole seconds only. When `sleep 0.1` fails,
+    -- the retry loop must still wait (falling back to `sleep 1`) instead of
+    -- spinning through its retries instantly.
+    local dir = test_sandbox .. "/strict_sleep"
+    tmio.mkdir_p(dir .. "/bin")
+    local log = dir .. "/sleep.log"
+    local f = io.open(dir .. "/bin/sleep", "w")
+    f:write("#!/bin/sh\necho \"$1\" >> " .. log .. "\ncase \"$1\" in *.*) exit 1;; esac\nexit 0\n")
+    f:close()
+    os.execute("chmod +x " .. dir .. "/bin/sleep")
+    os.execute("mkdir " .. dir .. "/.tm.lock")
+    local src = script_dir .. "/../src"
+    os.execute(string.format("PATH=%s/bin:$PATH lua -e %s", dir, tmio.shell_quote(string.format(
+        "package.path=%q..'/?.lua;'..package.path; require('tmio').acquire_lock(%q, { retries = 2 })", src, dir))))
+    local lf = io.open(log, "r")
+    local calls = lf and lf:read("*a") or ""
+    if lf then lf:close() end
+    check("lock", "falls back to whole-second sleep when fractional sleep fails",
+        calls:find("0.1", 1, true) ~= nil and calls:find("\n1\n", 1, true) ~= nil, calls)
+end
+
+-- ── lock release reports a lock it cannot remove ───────────────────────────
+
+do
+    local dir = test_sandbox .. "/stuck_lock"
+    tmio.mkdir_p(dir)
+    local src = script_dir .. "/../src"
+    local p = io.popen(string.format("lua -e %s 2>&1", tmio.shell_quote(string.format(
+        "package.path=%q..'/?.lua;'..package.path; local t=require('tmio'); t.acquire_lock(%q, {retries=0}); " ..
+        "io.open(%q,'w'):close(); t.release_lock(%q)", src, dir, dir .. "/.tm.lock/stray", dir))))
+    local out = p:read("*a")
+    p:close()
+    check("lock", "a lock that cannot be removed is reported", out:find(".tm.lock", 1, true) ~= nil, out)
+end
+
 -- ── mkdir_p failure ────────────────────────────────────────────────────────
 
 do

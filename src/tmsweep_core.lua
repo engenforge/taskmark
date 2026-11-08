@@ -213,15 +213,15 @@ end
 -- order, dateless ones last. The document title is the first heading when
 -- it is level 1 (its text is never matched). The *top section* is the
 -- first heading beneath the title, or the first heading of all when there
--- is no title. When `sprint_label` names a heading ("## Sprint <label>",
--- or "## <YYYY-MM>" as given) that is already the top section, the blocks
+-- is no title. When `heading_text` (the full text of a level-2 heading,
+-- such as "2026-11" or "Sprint S4") is already the top section, the blocks
 -- are prepended into it, directly beneath its heading. Otherwise a new
 -- section is inserted at the top -- never ordered by heading text, which
 -- does not sort chronologically ("Sprint S10" < "Sprint S9") -- beneath the
 -- title, or above the first heading when there is no title, or after any
 -- preamble prose when there are no headings at all. Content inside each
 -- moved block is preserved verbatim; blank lines are normalized.
-function M.insert_into_completed(completed_lines, moved_blocks, sprint_label)
+function M.insert_into_completed(completed_lines, moved_blocks, heading_text)
     if not moved_blocks or #moved_blocks == 0 then return completed_lines end
 
     local sorted_blocks = {}
@@ -233,14 +233,9 @@ function M.insert_into_completed(completed_lines, moved_blocks, sprint_label)
         return a.idx < b.idx
     end)
 
-    local sprint_heading
-    if sprint_label and sprint_label ~= "" then
-        if sprint_label:match("^Sprint") or sprint_label:match("^%d%d%d%d%-%d%d$") then
-            sprint_heading = sprint_label
-        else
-            sprint_heading = "Sprint " .. sprint_label
-        end
-    end
+    -- The section heading's text exactly as the caller chose it (e.g.
+    -- "2026-11" or "Sprint S4"); no prefix is ever guessed from its shape.
+    local sprint_heading = (heading_text and heading_text ~= "") and heading_text or nil
 
     local title = title_line(completed_lines)
     local top, top_fields = next_heading(completed_lines, title or 0)

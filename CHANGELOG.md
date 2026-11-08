@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Default task directory is now `.tasks/`** (was `doc/tasks/`), the recommended mount point for an orphan `tasks` branch worktree. A project with only `doc/tasks/` keeps resolving there when `tasks_dir` is not configured; run `git mv doc/tasks .tasks` (or set `tasks_dir: doc/tasks` in `.taskmarkrc`) to settle it.
 
 ### Fixed
+- **`tm move` with two names for one file:** paths are compared canonically (no `realpath(1)` needed), so moving between, e.g., `.tasks/active.tm.md` and a symlink to it — or `./.tasks/active.tm.md` — no longer loses the task or deadlocks on its own lock.
+- **`tm done` and fenced examples:** a `> **Completed:**` line inside a fenced code block in the payload is content, and is no longer overwritten in place of stamping the task.
+- **`tm sweep --sprint LABEL`** always buckets under `## Sprint LABEL`, even for labels such as `2026-11` or `Sprint-1`.
+- **Symlinked task files** are written through to their target; the link is no longer replaced by a regular file.
+- **`--`** ends options for `tm add/done/move/list`, so task text may start with `-`.
+- **Lock handling:** waiting falls back to whole-second `sleep` where fractional sleep is unsupported, and a lock that cannot be removed is reported.
 - **Sweep into a `completed.tm.md` without a title:** no longer writes a duplicate section heading.
 - **Atomic writes:** temp files are uniquely named per write, a short write or failed flush never replaces the original, and `tm validate --fix` now uses the same writer (preserving CRLF documents).
 - **Concurrent runs:** `sweep`, `archive`, and `validate --fix` hold a short-lived `.tm.lock` on the task directory so concurrent runs wait instead of losing updates.

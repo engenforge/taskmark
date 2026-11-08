@@ -381,9 +381,9 @@ local function read(path)
 end
 local tm_abs = io.popen("realpath " .. script_dir .. "/../src/tm"):read("*l")
 -- Run tm with `dir` as cwd; returns output, exit code.
-local function tm_in(dir, args)
-    local p = io.popen(string.format("cd %s && lua %s %s 2>&1; echo __EXIT__$?",
-        tmio.shell_quote(dir), tm_abs, args))
+local function tm_in(dir, args, env)
+    local p = io.popen(string.format("cd %s && %slua %s %s 2>&1; echo __EXIT__$?",
+        tmio.shell_quote(dir), env or "", tm_abs, args))
     local out = p:read("*a")
     p:close()
     local code = tonumber(out:match("__EXIT__(%d+)")) or -1
@@ -546,6 +546,74 @@ do
         code ~= 0 and read(tmp .. "/.tasks/nosuch.tm.md") == nil, out)
     out, code = tm_in(tmp, "list .tasks/nosuch.tm.md")
     check("list", "missing file is an error", code ~= 0, out)
+    cleanup_dir(tmp)
+end
+
+-- ── 9. Second review regressions ───────────────────────────────────────────
+
+do
+    -- An existing-Completed search must not reach into fenced example text.
+    local tmp = make_temp_dir()
+    local f = tmp .. "/active.tm.md"
+    write(f, "# S\n\n- [ ] Doc example\n    > **Created:** 2026-11-01\n\n    ```markdown\n    > **Completed:** 2020-01-01 git:deadbee\n    ```\n")
+    tmmutate.done({ file = f, query = "Doc example", date = "2026-11-08" })
+    check("done", "fenced example line is left untouched, real field run is stamped",
+        read(f) == "# S\n\n- [x] Doc example\n    > **Created:** 2026-11-01\n    > **Completed:** 2026-11-08\n\n    ```markdown\n    > **Completed:** 2020-01-01 git:deadbee\n    ```\n", read(f))
+    cleanup_dir(tmp)
+end
+
+do
+    -- Two spellings of one directory, and a symlinked name for the same
+    -- file: no self-deadlock, no lost task -- with or without realpath(1).
+    local tmp = make_temp_dir()
+    tmio.mkdir_p(tmp .. "/.tasks")
+    tmio.mkdir_p(tmp .. "/fakebin")
+    write(tmp .. "/fakebin/realpath", "#!/bin/sh\nexit 1\n")
+    os.execute("chmod +x " .. tmp .. "/fakebin/realpath")
+    local body = "# S\n\n## Alpha\n\n- [ ] Movable task\n\n## Beta\n\n- [ ] Other\n"
+    for _, case in ipairs({
+        { name = "./-prefixed spelling", to = "./.tasks/active.tm.md" },
+        { name = "symlink in the same directory", to = ".tasks/current.tm.md", link = true },
+    }) do
+        for _, env in ipairs({ "", "PATH=" .. tmp .. "/fakebin:$PATH " }) do
+            os.remove(tmp .. "/.tasks/current.tm.md")
+            write(tmp .. "/.tasks/active.tm.md", body)
+            if case.link then os.execute("ln -s active.tm.md " .. tmp .. "/.tasks/current.tm.md") end
+            local out, code = tm_in(tmp, "move Movable --from .tasks/active.tm.md --to " .. case.to .. " --section Beta", env)
+            local after = read(tmp .. "/.tasks/active.tm.md") or ""
+            local _, n = after:gsub("Movable task", "")
+            check("move", "same file via " .. case.name .. (env ~= "" and " (no realpath)" or "") .. ": one copy, in Beta",
+                code == 0 and n == 1 and after:find("## Beta\n\n- [ ] Other\n\n- [ ] Movable task", 1, true) ~= nil, out .. after)
+        end
+    end
+    cleanup_dir(tmp)
+end
+
+do
+    -- `--` ends options, so task text and patterns may start with '-'.
+    local tmp = make_temp_dir()
+    tmio.mkdir_p(tmp .. "/.tasks")
+    write(tmp .. "/.tasks/active.tm.md", "# S\n")
+    local out, code = tm_in(tmp, "add -p A -- '-v flag handling'")
+    check("add", "text after -- may start with '-'", code == 0 and read(tmp .. "/.tasks/active.tm.md") == "# S\n\n- [ ] (A) -v flag handling\n", out)
+    out, code = tm_in(tmp, "done -- -v")
+    check("done", "pattern after -- may start with '-'", code == 0 and (read(tmp .. "/.tasks/active.tm.md") or ""):find("- [x] (A) -v flag", 1, true) ~= nil, out)
+    cleanup_dir(tmp)
+end
+
+do
+    -- Writing through a symlinked task file updates its target and keeps the link.
+    local tmp = make_temp_dir()
+    tmio.mkdir_p(tmp .. "/.tasks")
+    tmio.mkdir_p(tmp .. "/shared")
+    write(tmp .. "/shared/active.tm.md", "# S\n\n- [ ] Linked task\n")
+    os.execute("ln -s ../shared/active.tm.md " .. tmp .. "/.tasks/active.tm.md")
+    local out, code = tm_in(tmp, "done Linked")
+    local is_link = os.execute("test -h " .. tmp .. "/.tasks/active.tm.md")
+    check("symlink", "tm done through a symlink succeeds", code == 0, out)
+    check("symlink", "the symlink is still a symlink", is_link == true or is_link == 0)
+    check("symlink", "the link target holds the change",
+        (read(tmp .. "/shared/active.tm.md") or ""):find("- [x] Linked task", 1, true) ~= nil)
     cleanup_dir(tmp)
 end
 

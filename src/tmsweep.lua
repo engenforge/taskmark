@@ -147,8 +147,8 @@ local function M_run(args)
             return false
         end
 
-        local sprint_label = sprint_value or os.date("%Y-%m")
-        local new_completed = core.insert_into_completed(completed_lines, moved, sprint_label)
+        local heading = sprint_value and ("Sprint " .. sprint_value) or os.date("%Y-%m")
+        local new_completed = core.insert_into_completed(completed_lines, moved, heading)
         local descriptions = {}
         for _, mb in ipairs(moved) do
             local _, fields = tmscan.classify(mb.lines[1])

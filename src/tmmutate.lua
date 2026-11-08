@@ -19,6 +19,7 @@ local tmscan       = require("tmscan")
 local tmconfig     = require("tmconfig")
 local tmio         = require("tmio")
 local tmsweep_core = require("tmsweep_core")
+local tmgit        = require("tmgit")
 
 local M = {}
 
@@ -43,21 +44,35 @@ local function dir_of(path)
     return path:match("^(.*)/[^/]+$") or "."
 end
 
--- Canonical path of an existing file, for telling whether two names refer
--- to the same document.
-local function canonical(path)
-    local p = io.popen("realpath -- " .. tmio.shell_quote(path) .. " 2>/dev/null")
-    local out = p and p:read("*l")
-    if p then p:close() end
-    return out or path
+-- Canonical form of an existing directory (symlinks resolved), using only
+-- `cd` and `pwd -P` -- no dependency on realpath(1).
+local function canonical_dir(dir)
+    return tmgit.realpath(dir) or dir
 end
 
--- Run fn while holding the locks of every distinct directory in `dirs`,
+-- Canonical name of an existing file: symlinks in the name followed, then
+-- its directory canonicalized.
+local function canonical_file(path)
+    local resolved = tmio.resolve_symlinks(path)
+    return canonical_dir(dir_of(resolved)) .. "/" .. (resolved:match("([^/]+)$") or resolved)
+end
+
+-- Whether two existing paths name the same file. Either check suffices:
+-- a missed match would move a task out of a file and then overwrite it.
+local function same_file(a, b)
+    if canonical_file(a) == canonical_file(b) then return true end
+    local r = os.execute("test " .. tmio.shell_quote(a) .. " -ef " .. tmio.shell_quote(b) .. " 2>/dev/null")
+    return r == true or r == 0
+end
+
+-- Run fn while holding the locks of every distinct directory in `dirs`
+-- (compared canonically, so two spellings of one directory are one lock),
 -- acquired in sorted order so two runs can never deadlock.
 local function with_locks(dirs, fn)
     local seen, sorted = {}, {}
     for _, d in ipairs(dirs) do
-        if not seen[d] then seen[d] = true; sorted[#sorted + 1] = d end
+        local c = canonical_dir(d)
+        if not seen[c] then seen[c] = true; sorted[#sorted + 1] = c end
     end
     table.sort(sorted)
     local function nest(i)
@@ -253,9 +268,15 @@ function M.done(opts)
         if opts.git_sha then stamp = stamp .. " git:" .. opts.git_sha end
 
         local last = block_end(lines, task)
+        -- An existing Completed field, ignoring fenced code: a fenced
+        -- example of a Completed line is content, not the task's field.
         local existing
-        for i = task.line + 1, last do
-            if lines[i]:match("^    > %*%*Completed:%*%*") then existing = i break end
+        for i, _, _, _, _, fence_open in tmscan.iter(lines) do
+            if i > last then break end
+            if i > task.line and not fence_open and lines[i]:match("^    > %*%*Completed:%*%*") then
+                existing = i
+                break
+            end
         end
 
         if existing then
@@ -299,7 +320,7 @@ function M.move(opts)
         if not src then return false, "no such file: " .. from end
         local dest, dest_nl = read_file(to)
         if not dest then return false, "no such file: " .. to end
-        local same = canonical(from) == canonical(to)
+        local same = same_file(from, to)
 
         local tasks = tmscan.tasks(src)
         local handles = M.handles(tasks)
@@ -353,10 +374,11 @@ function M.add(opts)
         if not lines then return false, "no such file: " .. file end
         local at, aerr = insertion_point(lines, opts.section)
         if not at then return false, aerr .. " in " .. file end
-        local ok, werr = write_lines(file, splice(lines, at, { task_line }), nl)
+        local new_lines = tmsweep_core.normalize_blank_lines(splice(lines, at, { task_line }))
+        local ok, werr = write_lines(file, new_lines, nl)
         if not ok then return false, werr end
 
-        local after = tmscan.tasks(tmsweep_core.normalize_blank_lines(splice(lines, at, { task_line })))
+        local after = tmscan.tasks(new_lines)
         local handles = M.handles(after)
         for _, t in ipairs(after) do
             if t.summary == text then return true, t, handles end
@@ -369,9 +391,9 @@ end
 
 local USAGE = {
     list = "Usage: tm list [--pending|--all] [--tasks-dir DIR] [file...]",
-    done = "Usage: tm done <handle-or-pattern> [--git [REV]] [--file FILE] [--tasks-dir DIR]",
-    move = "Usage: tm move <handle-or-pattern> [--from FILE] [--to FILE] [--section SECTION] [--tasks-dir DIR]",
-    add  = "Usage: tm add <task-text> [-p|--priority PRI] [--section SECTION] [--file FILE] [--tasks-dir DIR]",
+    done = "Usage: tm done [options] [--] <handle-or-pattern>   (options: --git [REV], --file FILE, --tasks-dir DIR)",
+    move = "Usage: tm move [options] [--] <handle-or-pattern>   (options: --from FILE, --to FILE, --section SECTION, --tasks-dir DIR)",
+    add  = "Usage: tm add [options] [--] <task-text>   (options: -p|--priority PRI, --section SECTION, --file FILE, --tasks-dir DIR)",
 }
 
 local VALUE_OPTS = {
@@ -419,7 +441,12 @@ function M.run(subcmd, args)
     local i = 1
     while i <= #args do
         local a = args[i]
-        if VALUE_OPTS[a] then
+        if a == "--" then
+            -- End of options: everything after is task text or a pattern,
+            -- even when it starts with '-'.
+            for j = i + 1, #args do positionals[#positionals + 1] = args[j] end
+            break
+        elseif VALUE_OPTS[a] then
             if not args[i + 1] then tmio.die(a .. " requires an argument") end
             opts[VALUE_OPTS[a]] = args[i + 1]
             i = i + 1

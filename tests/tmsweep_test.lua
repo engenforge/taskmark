@@ -190,7 +190,7 @@ do
     local completed = lines_of([[
 # Completed Archive]])
     local moved = { { lines = { "- [x] A task", "    > **Completed:** 2026-09-01" } } }
-    local result = core.insert_into_completed(completed, moved, "2026-S2")
+    local result = core.insert_into_completed(completed, moved, "Sprint 2026-S2")
     check("insert_into_completed", "creates a new H2 sprint heading after the first heading",
           join(result):match("# Completed Archive\n\n## Sprint 2026%-S2\n\n%- %[x%] A task") ~= nil)
 end
@@ -221,7 +221,7 @@ do
 - [x] Old task
     > **Completed:** 2026-08-01]])
     local moved = { { lines = { "- [x] New task", "    > **Completed:** 2026-09-02" } } }
-    local result = core.insert_into_completed(completed, moved, "2026-S2")
+    local result = core.insert_into_completed(completed, moved, "Sprint 2026-S2")
     local text = join(result)
     local _, count = text:gsub("## Sprint 2026%-S2", "")
     check("insert_into_completed", "does not duplicate the existing sprint heading", count == 1)
@@ -237,7 +237,7 @@ do
 # Completed Archive]])
     local moved = { { lines = { "- [x] A task", "    > **Completed:** 2026-11-08" } } }
     local result = core.insert_into_completed(completed, moved, "2026-11")
-    check("insert_into_completed", "formats YYYY-MM heading without Sprint prefix",
+    check("insert_into_completed", "uses the heading text exactly as given",
           join(result):match("# Completed Archive\n\n## 2026%-11\n\n%- %[x%] A task") ~= nil)
 end
 
@@ -287,7 +287,7 @@ do
           text:match("^# Completed Archive\n\n## 2026%-11\n\n%- %[x%] Fresh task\n\n## Sprint 2026%-S2") ~= nil, text)
 
     completed = lines_of("# Completed\n\n## Sprint S9\n\n- [x] nine")
-    text = join(core.insert_into_completed(completed, { { lines = { "- [x] ten" } } }, "S10"))
+    text = join(core.insert_into_completed(completed, { { lines = { "- [x] ten" } } }, "Sprint S10"))
     check("insert_into_completed", "Sprint S10 lands above Sprint S9",
           text:match("## Sprint S10.-## Sprint S9") ~= nil, text)
 end
@@ -529,6 +529,20 @@ do
     check("e2e sweep --sprint", "exit 0", code == 0, out)
     check("e2e sweep --sprint", "tasks bucketed under ## Sprint 2026-S2",
           (read_file(dir .. "/completed.tm.md") or ""):find("## Sprint 2026-S2\n\n- [x] Sprint task", 1, true) ~= nil)
+    os.execute("rm -rf " .. dir)
+end
+
+do
+    -- --sprint always means "## Sprint <label>", whatever the label looks like.
+    local dir = tmpdir()
+    write_file(dir .. "/completed.tm.md", "# Completed Archive\n")
+    for _, label in ipairs({ "2026-11", "Sprint-1" }) do
+        write_file(dir .. "/active.tm.md", "# Current Sprint\n\n- [x] task for " .. label .. "\n")
+        run_cli(string.format("--sweep --sprint %s %s/active.tm.md", label, dir))
+    end
+    local body = read_file(dir .. "/completed.tm.md") or ""
+    check("e2e sweep --sprint", "date-like label becomes ## Sprint 2026-11", body:find("## Sprint 2026-11\n", 1, true) ~= nil, body)
+    check("e2e sweep --sprint", "Sprint-prefixed label becomes ## Sprint Sprint-1", body:find("## Sprint Sprint-1\n", 1, true) ~= nil, body)
     os.execute("rm -rf " .. dir)
 end
 

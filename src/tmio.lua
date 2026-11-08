@@ -54,6 +54,16 @@ M.LOCK_NAME = ".tm.lock"
 
 local held = {}
 
+-- Remove a lock directory; report it if it cannot be removed (e.g. something
+-- was written inside it), since a leftover lock blocks later runs.
+local function remove_lock(path)
+    if os.remove(path) then return end
+    os.execute("rmdir " .. M.shell_quote(path) .. " 2>/dev/null")
+    if M.dir_exists(path) then
+        io.stderr:write("tm: could not remove lock " .. path .. "; remove it by hand\n")
+    end
+end
+
 local function lock_path(dir)
     if not dir or dir == "" then dir = "." end
     return dir .. "/" .. M.LOCK_NAME
@@ -72,7 +82,10 @@ function M.acquire_lock(dir, opts)
             return true
         end
         if attempt < retries then
-            os.execute(string.format("sleep %s", tostring(wait)))
+            -- Fractional sleep is common but not POSIX; fall back to whole
+            -- seconds rather than spin through the retries.
+            os.execute(string.format("sleep %s 2>/dev/null || sleep %d",
+                tostring(wait), math.max(1, math.ceil(wait))))
         end
     end
     return nil, "task directory is locked by another tm process: " .. path ..
@@ -82,14 +95,14 @@ end
 function M.release_lock(dir)
     local path = lock_path(dir)
     if held[path] then
-        os.remove(path)
+        remove_lock(path)
         held[path] = nil
     end
 end
 
 function M.release_all_locks()
     for path in pairs(held) do
-        os.remove(path)
+        remove_lock(path)
         held[path] = nil
     end
 end
@@ -138,6 +151,23 @@ function M.unique_token()
     return string.format("%s%x%x", addr, clk, rnd)
 end
 
+-- The file a path finally refers to, following symlinks (up to 40 hops).
+-- Plain Lua cannot lstat, so this costs one short shell per call (plus one
+-- per hop) -- negligible next to a document rewrite.
+function M.resolve_symlinks(path)
+    for _ = 1, 40 do
+        local p = io.popen("[ -h " .. M.shell_quote(path) .. " ] && readlink " .. M.shell_quote(path) .. " 2>/dev/null")
+        local target = p and p:read("*l")
+        if p then p:close() end
+        if not target or target == "" then return path end
+        if target:sub(1, 1) ~= "/" then
+            target = (path:match("^(.*)/[^/]+$") or ".") .. "/" .. target
+        end
+        path = target
+    end
+    return path
+end
+
 -- Construct a unique temporary file path residing in the same directory as `path`
 -- to ensure an atomic inode rename without cross-filesystem errors.
 function M.temp_path_for(path)
@@ -151,6 +181,9 @@ end
 -- leave a half-written document behind and concurrent writers do not collide.
 -- Returns true, or nil, reason.
 function M.write_file_atomic(path, content)
+    -- Write through a symlinked document to its target, so the rename
+    -- below replaces the target and the link survives.
+    path = M.resolve_symlinks(path)
     local tmp = M.temp_path_for(path)
     local f = io.open(tmp, "w")
     if not f then return nil, "cannot write: " .. tmp end

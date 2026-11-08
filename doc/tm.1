@@ -256,6 +256,12 @@ matching several tasks is likewise rejected with the candidates listed.\&
 Two tasks with identical summaries share a hash; make their text differ to
 address them separately.\&
 .PP
+For \fBadd\fR, \fBdone\fR, \fBmove\fR, and \fBlist\fR, `\-\-` ends the options, so task text or
+a pattern may begin with '\&\-'\&: `tm add \-\- "\-v flag handling"`.\&
+.PP
+Task files may be symlinks: \fBtm\fR writes through a link to its target and
+leaves the link in place.\&
+.PP
 .SH FILES
 \fI.\&tasks/active.\&tm.\&md\fR
 .RS 4

@@ -47,7 +47,7 @@ DIST_STAGE      := build/dist-stage
 # the same commit, so `make dist dist-bin` yields exactly one release pair.
 define dist_prune
 	mkdir -p $(DIST_DIR)
-	@for f in $(DIST_DIR)/* $(DIST_DIR)/.[!.]*; do \
+	@for f in $(DIST_DIR)/* $(DIST_DIR)/.[!.]* $(DIST_DIR)/..?*; do \
 	    [ -e "$$f" ] || continue; \
 	    case "$${f##*/}" in \
 	        $(DIST_NAME).tar.xz|$(DIST_BIN_NAME).tar.xz|SHA256SUMS) ;; \

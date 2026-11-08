@@ -189,6 +189,12 @@ _handle_, e.g. `[f4a1]`. Editing a task's text changes its handle.
 Two tasks with identical summaries share a hash; make their text differ to
 address them separately.
 
+For *add*, *done*, *move*, and *list*, `--` ends the options, so task text or
+a pattern may begin with '-': `tm add -- "-v flag handling"`.
+
+Task files may be symlinks: *tm* writes through a link to its target and
+leaves the link in place.
+
 # FILES
 _.tasks/active.tm.md_
 	The current sprint.
