@@ -24,7 +24,7 @@ date: 2026-11-08
     > - Incorporate Rule V13 lazy-continuation boundary enforcement (prose must not directly follow a payload without a blank line).
     > - Update `src/tmsweep.lua` / `src/tmsweep_core.lua` to append completed tasks under chronological headings (`## YYYY-MM`) without requiring or mutating frontmatter dates, settling archive tail trailing blank-line normalization.
     > - Scope the specification strictly to self-contained Taskmark directories: remove normative global Hub concepts from `doc/taskmark_spec.md`.
-    > - Simplify `src/tmconfig.lua`: remove unused hub configuration defaults, and add auto-detection for `./.tasks` before falling back to `./doc/tasks`.
+    > - Simplify `src/tmconfig.lua`: remove unused hub configuration defaults (auto-detection for `./.tasks` with fallback to `./doc/tasks` implemented in main).
     > - Update `doc/taskmark_spec.md` to `SPEC-TASKMARK-04`, and update fixture corpus and tests.
     > **Verify:** `make test` and CommonMark oracle pass cleanly; all fixtures updated and conforming.
 
