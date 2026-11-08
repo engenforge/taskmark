@@ -7,7 +7,7 @@
     > **Verify:** `make test` passes 100%; unit test confirms concurrent/repeated atomic writes do not collide.
     > **Completed:** 2026-11-08
 
-- [ ] (A) +spec @lua Spec & grammar evolution: transition to pure CommonMark (SPEC-TASKMARK-04)
+- [x] (A) +spec @lua Spec & grammar evolution: transition to pure CommonMark (SPEC-TASKMARK-04)
     > **Context:** YAML frontmatter blocks (`---`) in `.tm.md` files introduce syntax friction for AI agents and human editors, require an arbitrary `updated:` date field that frequently becomes stale, and complicate the parser stack. Moving to pure CommonMark eliminates frontmatter from task files, simplifies `tmscan.lua`, and drops frontmatter maintenance from `tmval.lua` and `tmsweep.lua`. Furthermore, removing the unimplemented "Hub and Spoke" architecture scopes the specification cleanly to self-contained Taskmark directories.
     > **Requirements:**
     > - Remove frontmatter requirements from task documents; task files start immediately with `#` or `##` CommonMark headings.
@@ -20,6 +20,7 @@
     > - Simplify `src/tmconfig.lua`: remove unused hub configuration defaults (`.tasks` default implemented in main).
     > - Update `doc/taskmark_spec.md` to `SPEC-TASKMARK-04`, and update fixture corpus and tests.
     > **Verify:** `make test` and CommonMark oracle pass cleanly; all fixtures updated and conforming.
+    > **Completed:** 2026-11-08 git:9593b39
 
 - [ ] (A) +cli @lua AI & CLI ergonomics: atomic task mutations, compact listings, and ephemeral hashes
     > **Context:** AI coding agents and human developers frequently encounter formatting or line-drift errors when manually splicing task lines and completed blocks into Markdown files. A CLI mutation suite prevents formatting errors and saves AI context tokens. Runtime ephemeral hashing provides exact CLI handles without polluting Markdown files with sequential numbers or ID counters.
