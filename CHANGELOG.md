@@ -10,45 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Orphan Git Branch Topology and Worktree Integration:**
-  - Added `tm init --orphan [branch]` command to automate initializing an isolated orphan branch (default: `tasks`), ignoring `.tasks/` in `.gitignore`, setting `tasks_dir: .tasks` in `.taskmarkrc`, mounting `.tasks/` as a worktree, and committing starter files.
-  - `tm init --orphan` mounts an existing local or already-fetched remote branch before creating a new one (so a clone joins the shared history), never copies code-branch files into the worktree, works on git without `worktree add --orphan`, refuses a non-worktree directory and non-root invocation, and names the code-branch files left to commit.
-  - Added `tm sync [-m MSG] [-p]`, which commits the tasks directory only when it is the top level of its own work tree, passes the message to git verbatim, sets the upstream on the first push, and shows git's errors. Git hooks run normally for both commands.
-  - Formally specified the orphan branch worktree pattern (§10.2) and cross-branch commit references (`git:<sha>`, §10.3) in `doc/taskmark_spec.md`.
-- **Task mutations and compact listings (`tm list`, `tm add`, `tm done`, `tm move`):**
-  - **Ephemeral handles:** each task is addressed by the shortest prefix (at least 4 hex digits) of a hash of its summary that is unique in its file; nothing is written to the task files. The hash ignores checkbox state, so a handle survives `tm done`. Ambiguous handles or substring patterns are rejected with each candidate's unique handle listed.
-  - **`tm list [--pending|--all]`:** one line per task, without payloads.
-  - **`tm done <handle|pattern> [--git [REV]]`:** marks a *pending* task `- [x]` and stamps `> **Completed:** YYYY-MM-DD [git:<sha>]` (local date) into its leading field run; REV must be a commit in the repository.
-  - **`tm move <handle|pattern> [--from F] [--to T] [--section S]`:** moves a task between files or between sections of one file; the destination is written first.
-  - **`tm add <text> [-p PRI] [--section S]`:** adds a task under the first heading or a named section.
-  - `add`, `done`, and `move` hold the task-directory lock; an unknown `--section` or missing file is an error and no file is created.
-- **Sweep batch order:** tasks swept together are ordered newest first by their own `Completed` dates.
+- `tm list`, `tm add`, `tm done`, and `tm move` for editing tasks from the command line, addressed by short handles derived from each task's text.
+- `tm init --orphan [BRANCH]` and `tm sync` to keep task files on a separate Git branch mounted at `.tasks/`.
+- Rule V14 reports leftover frontmatter in pre-0.4 files; `tm validate --fix` removes it.
 
 ### Changed
-- **Transition to Pure CommonMark (SPEC-TASKMARK-04):**
-  - **Removed Frontmatter from Task Files:** Taskmark files (`active.tm.md`, `future.tm.md`, `completed.tm.md`, `archive/<YYYY>/<YYYY-MM>.tm.md`) now start immediately on line 1 with standard Markdown headings. Frontmatter blocks (`---`) are eliminated, removing syntax friction and parsing ambiguities.
-  - **Rule V13 (Lazy Continuation Enforcement):** Added Rule V13 requiring a blank line between a task line or its payload and any following top-level prose, so CommonMark lazy continuation cannot absorb the prose into the task's summary or payload. `tm validate --fix` inserts the blank line.
-  - **Rule V14 (Leftover Frontmatter):** A pre-0.4 frontmatter block is reported once, as V14, instead of as misleading thematic-break/setext errors; `tm validate --fix` deletes it. An empty file is now a conforming document.
-  - **Reverse-Chronological `completed.tm.md` and archives:** Swept tasks are bucketed under `## YYYY-MM` for the month of the sweep (or `## Sprint <id>` with `tm sweep --sprint <id>`), and both new sections and new tasks are prepended, so the latest work is at the top. Archive files are likewise kept newest first beneath their title.
-  - **Removed `tm rotate`:** With no frontmatter there is no sprint state to rotate. `tm sweep --sprint <id>` covers the bucketing; spec §5.4 now describes sprint boundaries as a workflow convention.
-  - **Archive retention:** `completed.tm.md` keeps its 2 newest sections (was 10), plus any section with a `Completed` task in the last 14 days — with monthly sections, the current and previous month.
-  - **Scoped to Self-Contained Task Directories:** Removed global Hub-and-Spoke concepts from the normative specification, focusing the format strictly on repository-level `.tasks/` directories.
-  - **Configuration Cleanup:** Removed unused hub configuration defaults (`hub_dir`, `inbox_file`, `dashboard_file`, `registry_file`) from `tmconfig.lua`.
-  - **Validator Updates:** Dropped Rules V1/V2 (frontmatter required/well-formed).
-  - **Code Cleanup:** `tmmeta.lua` is now only the configuration reader; frontmatter split/update helpers are gone.
-- **Default task directory is now `.tasks/`** (was `doc/tasks/`), the recommended mount point for an orphan `tasks` branch worktree. A project with only `doc/tasks/` keeps resolving there when `tasks_dir` is not configured; run `git mv doc/tasks .tasks` (or set `tasks_dir: doc/tasks` in `.taskmarkrc`) to settle it.
+- **Specification (SPEC-TASKMARK-04):** task files are pure CommonMark with no frontmatter; hub-and-spoke concepts removed.
+- Rule V13 requires a blank line between a task (or its payload) and following prose.
+- Default task directory is `.tasks/` (was `doc/tasks/`, still used when it is the only one present).
+- `completed.tm.md` and archive files are newest first; sweeps bucket under `## YYYY-MM`, or `## Sprint <id>` with `tm sweep --sprint <id>`.
+- `tm archive` keeps the 2 newest sections in `completed.tm.md` (was 10).
+- Commands that modify task files lock the task directory, so concurrent runs no longer lose updates.
+
+### Removed
+- `tm rotate` (use `tm sweep --sprint <id>`).
+- Rules V1/V2 and the unused hub configuration keys.
 
 ### Fixed
-- **`tm move` with two names for one file:** paths are compared canonically (no `realpath(1)` needed), so moving between, e.g., `.tasks/active.tm.md` and a symlink to it — or `./.tasks/active.tm.md` — no longer loses the task or deadlocks on its own lock.
-- **`tm done` and fenced examples:** a `> **Completed:**` line inside a fenced code block in the payload is content, and is no longer overwritten in place of stamping the task.
-- **`tm sweep --sprint LABEL`** always buckets under `## Sprint LABEL`, even for labels such as `2026-11` or `Sprint-1`.
-- **Symlinked task files** are written through to their target; the link is no longer replaced by a regular file.
-- **`--`** ends options for `tm add/done/move/list`, so task text may start with `-`.
-- **`tm list`** notes on stderr when a file has no tasks to list; stdout stays empty for scripts.
-- **Lock handling:** waiting falls back to whole-second `sleep` where fractional sleep is unsupported, and a lock that cannot be removed is reported.
-- **Sweep into a `completed.tm.md` without a title:** no longer writes a duplicate section heading.
-- **Atomic writes:** temp files are uniquely named per write, a short write or failed flush never replaces the original, and `tm validate --fix` now uses the same writer (preserving CRLF documents).
-- **Concurrent runs:** `sweep`, `archive`, and `validate --fix` hold a short-lived `.tm.lock` on the task directory so concurrent runs wait instead of losing updates.
+- A failed write never replaces a task file, and concurrent writers no longer share a temp file.
+- `tm validate --fix` preserves CRLF line endings.
+- Symlinked task files keep their link when rewritten.
+- The installed `VERSION` file is readable by all users.
 
 ---
 
