@@ -43,4 +43,4 @@
     > - Formally document the `.tasks/` orphan worktree pattern and cross-branch `git: <sha>` commit references in `doc/taskmark_spec.md`.
     > - Provide optional `tm sync` / auto-commit helper to commit changes in `.tasks/` to the orphan branch.
     > **Verify:** Clean worktree initialization, end-to-end task mutations on mounted worktree, and validation that `git status` on `main` ignores `.tasks/`.
-    > **Completed:** 2026-11-08 git:2baaae9
+    > **Completed:** 2026-11-08 git:54c6cf4
