@@ -2,9 +2,22 @@ cmark-lua
 =========
 
 Vendored Sources & Provenance:
-- libcmark: version 0.31.1 from https://github.com/commonmark/cmark
-- cmark-lua: from https://github.com/jgm/cmark-lua
-- Pre-generated wrapper: cmark_wrap.c (built with swig)
+- libcmark: version 0.31.2 (tag commit eec0eeb) from
+  https://github.com/commonmark/cmark. `ext/` holds upstream `src/` files
+  unchanged, plus the CMake-generated `cmark_version.h` and
+  `cmark_export.h`, except for the local patch below.
+- cmark-lua: `cmark.i` and the Lua wrapper layout from
+  https://github.com/jgm/cmark-lua (its latest release targets 0.31.1).
+- Pre-generated wrapper: `cmark_wrap.c`, regenerated for 0.31.2 with
+  SWIG 4.5.1 using cmark-lua's command:
+  `swig -o cmark_wrap.c -lua -Iext -DCMARK_EXPORT='' cmark.i`
+
+Local patches:
+- `ext/utf8.c`: `const uint32_t *entry = bsearch(...)`, backported from
+  upstream commit 93e4801 ("Fix bsearch usage with C23", not yet in a
+  release). Under C23 (e.g. recent glibc) `bsearch` preserves the `const`
+  of its array argument, and the unpatched line warns. Drop this patch
+  when updating to a release that includes it.
 
 Lua wrapper for [libcmark](https://github.com/commonmark/cmark),
 CommonMark parsing and rendering library
