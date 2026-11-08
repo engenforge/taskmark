@@ -530,6 +530,29 @@ do
 end
 
 do
+    -- Sweep holds the task-directory lock for its read-modify-write: it
+    -- waits for a lock held by another process, and leaves none behind.
+    local dir = tmpdir()
+    write_file(dir .. "/active.tm.md", "# Current Sprint\n\n- [x] Locked task\n")
+    write_file(dir .. "/completed.tm.md", "# Completed Archive\n")
+    os.execute(string.format("mkdir %s/.tm.lock && (sleep 0.3; rmdir %s/.tm.lock) &", dir, dir))
+    os.execute("sleep 0.05")
+    local out, code = run_cli(string.format("--sweep %s/active.tm.md", dir))
+    check("lock", "sweep waits for a held lock, then succeeds", code == 0, out)
+    check("lock", "sweep moved the task after the lock cleared",
+          (read_file(dir .. "/completed.tm.md") or ""):match("Locked task") ~= nil)
+    check("lock", "sweep leaves no lock behind", os.execute("test -e " .. dir .. "/.tm.lock") ~= true)
+
+    -- A failing sweep (missing completed.tm.md) dies without a stale lock.
+    os.remove(dir .. "/completed.tm.md")
+    write_file(dir .. "/active.tm.md", "# Current Sprint\n\n- [x] Another\n")
+    out, code = run_cli(string.format("--sweep %s/active.tm.md", dir))
+    check("lock", "failing sweep exits non-zero", code ~= 0)
+    check("lock", "failing sweep leaves no lock behind", os.execute("test -e " .. dir .. "/.tm.lock") ~= true)
+    os.execute("rm -rf " .. dir)
+end
+
+do
     -- Help and unknown-option handling.
     local out, code = run_cli("-h")
     check("cli", "-h exits 0", code == 0)

@@ -5,7 +5,7 @@
 .nh
 .ad l
 .\" Begin generated content:
-.TH "tm" "1" "2026\-10\-27"
+.TH "tm" "1" "2026\-11\-02"
 .PP
 .SH NAME
 tm \- universal taskmark utility
@@ -138,6 +138,14 @@ Append\-only archive of completed sprints, newest first.\&
 .RS 4
 Sections aged out of \fIcompleted.\&tm.\&md\fR.\& Tool\-managed; never
 hand\-authored, and never rewritten once written.\&
+.PP
+.RE
+\fI<tasks\-dir>/.\&tm.\&lock\fR
+.RS 4
+Transient lock directory held by \fBsweep\fR, \fBrotate\fR, \fBarchive\fR, and
+\fBvalidate \-\-fix\fR for the duration of their read\-modify\-write, so
+concurrent \fBtm\fR runs wait for each other instead of losing updates.\&
+A stale lock left by a killed process may be removed by hand.\&
 .PP
 .RE
 .SH CONFIGURATION

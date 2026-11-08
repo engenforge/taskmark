@@ -306,6 +306,29 @@ date: 2026-10-01
     test_cli("--fix: unfixable file reports [FAIL]", out_unfix:find("%[FAIL%]") ~= nil)
 
     os.remove(tmp_fix)
+
+    -- 4. --fix writes through the shared atomic writer: the document's CRLF
+    -- newline style survives, and no temporary file is left beside it.
+    local crlf_dir = os.tmpname()
+    os.remove(crlf_dir)
+    os.execute("mkdir -p '" .. crlf_dir .. "'")
+    local crlf_path = crlf_dir .. "/crlf.tm.md"
+    local fc = io.open(crlf_path, "wb")
+    fc:write((bad_content:gsub("\n", "\r\n")))
+    fc:close()
+
+    local _, code_crlf = run_val("--fix " .. crlf_path)
+    test_cli("--fix: CRLF document repaired", code_crlf == 0)
+    local fr = io.open(crlf_path, "rb")
+    local crlf_body = fr:read("*a")
+    fr:close()
+    test_cli("--fix: CRLF newline style preserved",
+        crlf_body:find("\r\n", 1, true) ~= nil and crlf_body:gsub("\r\n", ""):find("\n", 1, true) == nil)
+    local ls = io.popen("ls -A '" .. crlf_dir .. "'")
+    local listing = ls:read("*a")
+    ls:close()
+    test_cli("--fix: leaves no temporary file behind", listing == "crlf.tm.md\n", "found: " .. listing)
+    os.execute("rm -rf '" .. crlf_dir .. "'")
 end
 
 -- Tests for top-level prose lists (*, +, 1.) and unicode bullet conversion

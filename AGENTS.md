@@ -13,6 +13,7 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
   - Init tests: `lua tests/tminit_test.lua`
   - Config resolution tests: `lua tests/tmconfig_test.lua`
   - Filter tests: `lua tests/tmfilter_test.lua`
+  - I/O filesystem unit tests: `lua tests/tmio_test.lua`
   - CommonMark conformance oracle: `lua tests/commonmark_test.lua` (requires `make build/cmark.so`)
 - Check man page matches scdoc source: `make man-check`
 - Regenerate man page from scdoc source: `make man` (requires `scdoc >= 1.11.5`)

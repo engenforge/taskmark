@@ -35,6 +35,7 @@ It replaces the single-line constraints of formats like `todo.txt` while maintai
 - **Auditable History:** Completed tasks retain a timestamp, plus a git commit hash when the task involved one (`> **Completed:** YYYY-MM-DD git:<sha>`).
 - **Automated Task Lifecycle:** `tm sweep` moves individual completed tasks from the active sheet to the archive; `tm rotate` does that and bumps the sprint; `tm archive` ages out older sections into monthly archives.
 - **Built-in Validator:** `tm validate` verifies strict spec compliance for task files.
+- **Safe Concurrent Writes:** Every rewrite goes through a uniquely named temp file and an atomic rename, and mutating commands hold a short-lived `.tm.lock` on the task directory so concurrent runs (a human and an AI agent, say) wait for each other instead of losing updates.
 - **Dependency-Free Runtime:** The tool that reads and writes your tasks is pure, portable Lua with no runtime dependency of any kind — no C compiler, no vendored library, nothing to build to install it.
 
 ---
@@ -276,6 +277,9 @@ lua tests/tmconfig_test.lua
 # indent/dedent filter test runner
 lua tests/tmfilter_test.lua
 
+# I/O filesystem unit tests
+lua tests/tmio_test.lua
+
 # CommonMark conformance oracle (needs `make test`'s cmark.so build first)
 lua tests/commonmark_test.lua
 ```
@@ -314,7 +318,8 @@ lua tests/commonmark_test.lua
 │   ├── tminit_test.lua   # Unit & integration test suite for tminit
 │   ├── tmsweep_test.lua  # Unit & integration test suite for tmsweep
 │   ├── tmconfig_test.lua # Unit & integration test suite for tmconfig
-│   └── tmfilter_test.lua # Unit & round-trip test suite for tmfilter
+│   ├── tmfilter_test.lua # Unit & round-trip test suite for tmfilter
+│   └── tmio_test.lua     # Unit tests for tmio
 └── vendor/
     └── cmark/            # Vendored libcmark & cmark-lua binding (test-only; never
                            # built, installed, or loaded at runtime)

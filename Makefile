@@ -9,6 +9,7 @@ SWEEP_TEST      = tests/tmsweep_test.lua
 INIT_TEST       = tests/tminit_test.lua
 CONFIG_TEST     = tests/tmconfig_test.lua
 FILTER_TEST     = tests/tmfilter_test.lua
+IO_TEST         = tests/tmio_test.lua
 COMMONMARK_TEST = tests/commonmark_test.lua
 
 PREFIX   ?= /usr/local
@@ -143,6 +144,8 @@ test: build/cmark.so check-modules
 	@$(LUA) $(CONFIG_TEST)
 	@echo "=== tm filter Test Suite ==="
 	@$(LUA) $(FILTER_TEST)
+	@echo "=== tm io Test Suite ==="
+	@$(LUA) $(IO_TEST)
 	@echo "=== CommonMark Conformance Oracle ==="
 	@$(LUA) $(COMMONMARK_TEST)
 	@echo "=== Man pages match their scdoc sources ==="

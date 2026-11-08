@@ -99,6 +99,12 @@ _doc/tasks/archive/<YYYY>/<YYYY-MM>.tm.md_
 	Sections aged out of _completed.tm.md_. Tool-managed; never
 	hand-authored, and never rewritten once written.
 
+_<tasks-dir>/.tm.lock_
+	Transient lock directory held by *sweep*, *rotate*, *archive*, and
+	*validate --fix* for the duration of their read-modify-write, so
+	concurrent *tm* runs wait for each other instead of losing updates.
+	A stale lock left by a killed process may be removed by hand.
+
 # CONFIGURATION
 Configuration uses the same flat `key: value` subset as frontmatter, read
 from two locations, each optional:

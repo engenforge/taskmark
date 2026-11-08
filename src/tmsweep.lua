@@ -257,7 +257,7 @@ local function M_run(args)
         -- having already lost the sections.
         for _, group in ipairs(archive_groups) do
             local year_dir = tasks_dir_resolved .. "/" .. cfg.archive_dir .. "/" .. group.year
-            mkdir_p(year_dir)
+            if not mkdir_p(year_dir) then die("cannot create directory: " .. year_dir) end
             local archive_path = year_dir .. "/" .. group.year .. "-" .. group.month .. ".tm.md"
             local archive_lines, archive_nl = read_file_content(archive_path)
             local write_nl = archive_nl or completed_nl or "\n"
@@ -291,8 +291,13 @@ local function M_run(args)
         end
     end
 
-    if sweep_flag or rotate_flag then do_sweep_or_rotate() end
-    if archive_flag then do_archive() end
+    -- Every action is a read-modify-write of the task directory: hold its
+    -- lock throughout so a concurrent tm run cannot interleave and lose an
+    -- update (die() releases it on any fatal error).
+    tmio.with_lock(tasks_dir_resolved, function()
+        if sweep_flag or rotate_flag then do_sweep_or_rotate() end
+        if archive_flag then do_archive() end
+    end)
 
     os.exit(0)
 end

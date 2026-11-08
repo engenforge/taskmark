@@ -11,6 +11,7 @@ package.path = script_dir .. "/?.lua;" .. script_dir .. "/../src/?.lua;" .. pack
 local tmconfig = require("tmconfig")
 local tmmeta   = require("tmmeta")
 local tmscan   = require("tmscan")
+local tmio     = require("tmio")
 
 local function show_help()
     print([[
@@ -504,7 +505,7 @@ local function run(args)
     local total_errors = 0
     local had_file_error = false
 
-    for _, file in ipairs(files) do
+    local function process(file)
         local f = io.open(file, "r")
         if not f then
             print(TERM_RED .. "Error: Target task file '" .. file .. "' not found." .. TERM_RESET)
@@ -526,20 +527,11 @@ local function run(args)
                 local fixed_lines, ok = fix_document(lines)
                 local remaining_errors = validate_lines(fixed_lines)
                 if #remaining_errors == 0 then
-                    -- Atomically write back repaired content
-                    local tmp_out = file .. ".tmp." .. tostring(os.time())
-                    local out_f = io.open(tmp_out, "w")
-                    if out_f then
-                        out_f:write(table.concat(fixed_lines, "\n") .. "\n")
-                        out_f:close()
-                        os.rename(tmp_out, file)
-                    else
-                        local out_f2 = io.open(file, "w")
-                        if out_f2 then
-                            out_f2:write(table.concat(fixed_lines, "\n") .. "\n")
-                            out_f2:close()
-                        end
-                    end
+                    -- Write back through the shared atomic writer, keeping
+                    -- the document's own newline style.
+                    local nl = tmscan.detect_newline(raw_content)
+                    local ok_w, werr = tmio.write_file_atomic(file, table.concat(fixed_lines, nl) .. nl)
+                    if not ok_w then tmio.die(werr) end
                     print(string.format("%s[FIXED]%s %s (repaired %d error(s); now conforms to SPEC-TASKMARK-03).", TERM_YELLOW, TERM_RESET, file, #errors))
                 else
                     for _, e in ipairs(remaining_errors) do
@@ -561,6 +553,15 @@ local function run(args)
                 end
                 total_errors = total_errors + #errors
             end
+        end
+    end
+
+    for _, file in ipairs(files) do
+        if fix_mode then
+            -- --fix is a read-modify-write: hold the directory lock across it.
+            tmio.with_lock(file:match("^(.*)/[^/]+$") or ".", process, file)
+        else
+            process(file)
         end
     end
 

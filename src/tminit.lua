@@ -88,7 +88,7 @@ local function M_run(args)
         if tmio.file_exists(path) then
             print(string.format("Skipped %s (already exists)", path))
         else
-            tmio.mkdir_p(dir)
+            if not tmio.mkdir_p(dir) then die("cannot create directory: " .. dir) end
             local ok, err = tmio.write_file_atomic(path, tmpl.content)
             if not ok then die(err) end
             print(string.format("Created %s", path))
