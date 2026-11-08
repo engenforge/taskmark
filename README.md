@@ -23,6 +23,7 @@ It replaces the single-line constraints of formats like `todo.txt` while maintai
 - [Running Tests](#running-tests)
 - [Repository Structure](#repository-structure)
 - [Repositories & Mirrors](#repositories--mirrors)
+- [Provenance & Disambiguation](#provenance--disambiguation)
 - [License](#license)
 
 ---
@@ -286,6 +287,7 @@ lua tests/commonmark_test.lua
 ```text
 .
 ├── AGENTS.md             # Coding agent instructions and project guidelines
+├── CHANGELOG.md          # Project version history and specification timeline
 ├── LICENSE               # MIT License
 ├── Makefile              # Build, test, install, and packaging targets
 ├── VERSION               # Semantic version string
@@ -333,6 +335,16 @@ Release tarballs (`taskmark-<ver>.tar.xz` source, `taskmark-<ver>-noarch.tar.xz`
 - Primary: `https://get.engenforge.com/taskmark/<ver>/<filename>`
 - Secondary: `https://gitlab.com/engenforge/taskmark/-/releases/v<ver>/downloads/<filename>`
 - Secondary: `https://github.com/engenforge/taskmark/releases/download/v<ver>/<filename>`
+
+---
+
+## Provenance & Disambiguation
+
+Taskmark was created by Jason Lenz (Engenforge LLC), with its initial specification (`SPEC-MDTASK-01`) and codebase originating on **June 30, 2026**.
+
+**Disambiguation Note:** Engenforge Taskmark (`tm` / `.tm.md`) is an independent POSIX/CommonMark specification and dependency-free Lua CLI. It is completely unrelated to and unaffiliated with the Cursor IDE plugin and hosted service at `taskmark.dev`.
+
+For a full historical record of releases and specification transitions, see [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
