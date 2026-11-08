@@ -22,7 +22,7 @@
     > **Verify:** `make test` and CommonMark oracle pass cleanly; all fixtures updated and conforming.
     > **Completed:** 2026-11-08 git:017307a
 
-- [ ] (A) +cli @lua AI & CLI ergonomics: atomic task mutations, compact listings, and ephemeral hashes
+- [x] (A) +cli @lua AI & CLI ergonomics: atomic task mutations, compact listings, and ephemeral hashes
     > **Context:** AI coding agents and human developers frequently encounter formatting or line-drift errors when manually splicing task lines and completed blocks into Markdown files. A CLI mutation suite prevents formatting errors and saves AI context tokens. Runtime ephemeral hashing provides exact CLI handles without polluting Markdown files with sequential numbers or ID counters.
     > **Requirements:**
     > - Implement runtime ephemeral task hashing in `tm` / `tmscan.lua`: compute a deterministic 4-character hex hash (e.g. DJB2/FNV-1a) of the normalized task summary on the fly. Normalization MUST exclude the checkbox state so a task keeps its handle across `tm done`. Four hex digits collide often enough (~26% for some pair among 200 tasks) that an ambiguous handle must be rejected with the candidates listed, and a longer prefix of the full hash accepted, git-style.
@@ -34,6 +34,7 @@
     > - Preserve inverted traceability: tasks link to git commits via the spec's `git:<sha>` form in the `Completed` field, with zero task numbering syntax in Markdown files.
     > **Files:** `src/tm`, `src/tmscan.lua`, `src/tmsweep.lua`, `tests/tmmutation_test.lua` (or similar), man pages.
     > **Verify:** End-to-end CLI unit and integration tests; `tm validate` passes on mutated files; verify reverse-chronological order in `completed.tm.md`.
+    > **Completed:** 2026-11-08 git:86d99ec
 
 - [ ] (B) +git @workflow Orphan Git branch topology and worktree integration
     > **Context:** Storing task tracking files directly in the main codebase branch introduces commit noise and pull-request churn. Mounting an orphan `tasks` branch into `.tasks/` via `git worktree add` isolates task history from primary code history.
