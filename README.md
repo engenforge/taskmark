@@ -246,7 +246,7 @@ make dist
 make dist-bin
 ```
 
-`make dist` (source) and `make dist-bin` (installed files) build from the committed `HEAD`, producing byte-identical tarballs listed in `build/dist/SHA256SUMS`. GNU tar and xz are required.
+`make dist` (source) and `make dist-bin` (installed files) build from the committed `HEAD`, producing byte-identical tarballs listed in `build/dist/SHA256SUMS`. Each first removes anything in `build/dist/` that is not one of the current commit's two tarballs, so after `make dist dist-bin` the directory and `SHA256SUMS` hold exactly that release pair. GNU tar and xz are required.
 
 ### Uninstall
 

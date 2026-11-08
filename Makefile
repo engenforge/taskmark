@@ -39,6 +39,21 @@ DIST_NAME       := taskmark-$(DIST_VERSION)
 DIST_BIN_NAME   ?= $(DIST_NAME)-noarch
 DIST_DIR        := build/dist
 DIST_STAGE      := build/dist-stage
+
+# Leave in $(DIST_DIR) only the current commit's source and noarch
+# tarballs, so SHA256SUMS never lists artifacts of an earlier commit.
+# dist and dist-bin each run this, and both keep the other's tarball for
+# the same commit, so `make dist dist-bin` yields exactly one release pair.
+define dist_prune
+	mkdir -p $(DIST_DIR)
+	@for f in $(DIST_DIR)/* $(DIST_DIR)/.[!.]*; do \
+	    [ -e "$$f" ] || continue; \
+	    case "$${f##*/}" in \
+	        $(DIST_NAME).tar.xz|$(DIST_BIN_NAME).tar.xz|SHA256SUMS) ;; \
+	        *) echo "removing stale $$f"; $(RM) -r "$$f" ;; \
+	    esac; \
+	done
+endef
 SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct HEAD 2>/dev/null)
 
 # The installed VERSION carries a git descriptor (tag, commit count past it,
@@ -212,7 +227,7 @@ clean:
 dist:
 	@test -n "$(GIT_COMMIT)" || { echo "make dist must run in a git checkout" >&2; exit 1; }
 	@git diff --quiet HEAD -- || echo "note: uncommitted changes are not included; dist is built from HEAD ($(GIT_COMMIT))"
-	mkdir -p $(DIST_DIR)
+	$(dist_prune)
 	$(RM) -r $(DIST_STAGE)
 	mkdir -p $(DIST_STAGE)/$(DIST_NAME)
 	git archive --format=tar HEAD | (cd $(DIST_STAGE)/$(DIST_NAME) && $(TAR) --no-same-owner -xf -)
@@ -227,7 +242,7 @@ dist:
 dist-bin:
 	@test -n "$(GIT_COMMIT)" || { echo "make dist-bin must run in a git checkout" >&2; exit 1; }
 	@git diff --quiet HEAD -- || echo "note: uncommitted changes are not included; dist-bin is built from HEAD ($(GIT_COMMIT))"
-	mkdir -p $(DIST_DIR)
+	$(dist_prune)
 	$(RM) -r $(DIST_STAGE)
 	mkdir -p $(DIST_STAGE)/src $(DIST_STAGE)/install-root
 	git archive --format=tar HEAD | (cd $(DIST_STAGE)/src && $(TAR) --no-same-owner -xf -)

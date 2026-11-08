@@ -39,5 +39,5 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
 
 ## Repository notes
 
-- `make dist` and `make dist-bin` build only from the committed `HEAD`; uncommitted and untracked files are never included, so commit first.
+- `make dist` and `make dist-bin` build only from the committed `HEAD`; uncommitted and untracked files are never included, so commit first. Each removes earlier commits' artifacts from `build/dist/` before building.
 - Man pages are written in scdoc (`doc/tm.1.scd`); the generated roff (`doc/tm.1`) is committed to the repository. Regenerate using `make man` and commit both.
