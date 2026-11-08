@@ -37,10 +37,10 @@ date: 2026-11-08
     > **Verify:** End-to-end CLI unit and integration tests; `tm validate` passes on mutated files.
 
 - [ ] (B) +git @workflow Orphan Git branch topology and worktree integration
-    > **Context:** Storing task tracking files directly in the main codebase branch introduces commit noise and pull-request churn. Mounting an orphan `tasks` branch into `doc/tasks/` via `git worktree add` isolates task history from primary code history.
+    > **Context:** Storing task tracking files directly in the main codebase branch introduces commit noise and pull-request churn. Mounting an orphan `tasks` branch into `.tasks/` via `git worktree add` isolates task history from primary code history.
     > **Requirements:**
     > - Implement `~` path expansion in `src/tmconfig.lua` so hub and tasks paths resolve reliably via `$HOME`.
-    > - Add `tm init --orphan [branch]` command (or document worktree bootstrap) to automate initializing an orphan branch, ignoring `doc/tasks` on `main`, and mounting `doc/tasks` as a sub-worktree.
+    > - Add `tm init --orphan [branch]` command (or document worktree bootstrap) to automate initializing an orphan branch, ignoring `.tasks` on `main`, configuring `tasks_dir: .tasks` in `.taskmarkrc`, and mounting `.tasks` as a sub-worktree.
     > - Document cross-branch `git: <sha>` commit references in `doc/taskmark_spec.md`, noting how references resolve against the shared Git object store.
-    > - Provide optional `tm sync` / auto-commit helper to commit changes in `doc/tasks/` to the orphan branch.
-    > **Verify:** Clean worktree initialization, end-to-end task mutations on mounted worktree, and validation that `git status` on `main` ignores `doc/tasks/`.
+    > - Provide optional `tm sync` / auto-commit helper to commit changes in `.tasks/` to the orphan branch.
+    > **Verify:** Clean worktree initialization, end-to-end task mutations on mounted worktree, and validation that `git status` on `main` ignores `.tasks/`.
