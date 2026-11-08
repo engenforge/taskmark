@@ -1,7 +1,3 @@
----
-project: Top Level Fence
----
-
 # Tasks
 
 ```sh

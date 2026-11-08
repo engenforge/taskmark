@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
 -- tests/tmconfig_test.lua — unit + end-to-end tests for tmconfig.lua
--- (SPEC-TASKMARK-03 §10 configuration resolution).
+-- (SPEC-TASKMARK-04 §9 configuration resolution).
 --
 -- Self-contained runner (mirroring tests/tmsweep_test.lua / tminit_test.lua
 -- style).
@@ -101,10 +101,6 @@ do
     check("resolve", "no file, no overrides: future_path derived", cfg.future_path == ".tasks/future.tm.md")
     check("resolve", "no file, no overrides: completed_path derived", cfg.completed_path == ".tasks/completed.tm.md")
     check("resolve", "no file, no overrides: archive_dir default", cfg.archive_dir == "archive")
-    check("resolve", "no file, no overrides: hub_dir default", cfg.hub_dir == "~/tasks")
-    check("resolve", "no file, no overrides: inbox_file default", cfg.inbox_file == "inbox.tm.md")
-    check("resolve", "no file, no overrides: dashboard_file default", cfg.dashboard_file == "dashboard.tm.md")
-    check("resolve", "no file, no overrides: registry_file default", cfg.registry_file == "registry.txt")
 end
 
 do
@@ -157,7 +153,7 @@ do
     write_file(global_path, [[
 active_file: now.tm.md
 archive_dir: history
-hub_dir: /srv/hub
+completed_file: finish.tm.md
 ]])
 
     local cfg = tmconfig.resolve({ config_path = local_path, global_config_path = global_path })
@@ -165,7 +161,7 @@ hub_dir: /srv/hub
     check("resolve", "per-key: global file fills a key the local file left unset",
           cfg.active_file == "now.tm.md")
     check("resolve", "per-key: global file's archive_dir used", cfg.archive_dir == "history")
-    check("resolve", "per-key: global file's hub_dir used", cfg.hub_dir == "/srv/hub")
+    check("resolve", "per-key: global file's completed_file used", cfg.completed_file == "finish.tm.md")
     check("resolve", "per-key: key set nowhere keeps the built-in default",
           cfg.future_file == "future.tm.md")
     check("resolve", "per-key: derived active_path combines local tasks_dir with global active_file",
@@ -225,31 +221,25 @@ archive_dir: history
           read_file(dir .. "/override/now.tm.md") ~= nil)
 
     -- Seed a completed task in the configured active file and confirm
-    -- rotate/archive resolve the configured paths with no positional args.
-    write_file(dir .. "/tracking/now.tm.md", [[---
-project: demo
-status: Active
-sprint: 2026-S1
-date: 2026-08-01
----
-
+    -- sweep/archive resolve the configured paths with no positional args.
+    write_file(dir .. "/tracking/now.tm.md", [[
 # Current Sprint
 
 - [x] Finished thing
     > **Completed:** 2026-08-01
 ]])
-    out, code = run_cmd(string.format("cd %s && lua %s rotate --sprint 2026-S2", dir, tm))
-    check("e2e", "tm rotate with no positional args resolves configured paths: exit 0", code == 0)
-    check("e2e", "tm rotate moved the task into the configured completed file",
+    out, code = run_cmd(string.format("cd %s && lua %s sweep --sprint 2026-S2", dir, tm))
+    check("e2e", "tm sweep with no positional args resolves configured paths: exit 0", code == 0)
+    check("e2e", "tm sweep moved the task into the configured completed file",
           (read_file(dir .. "/tracking/done.tm.md") or ""):match("Finished thing") ~= nil)
 
-    -- Age the rotated section out and confirm archive lands under the
+    -- Age the swept section out and confirm archive lands under the
     -- configured archive_dir name.
-    -- Ten recent filler sections plus OLD: OLD must be neither among the 10
-    -- newest nor within the 14-day window to actually age out (a single
-    -- section is always "among the 10 newest" and would never move).
-    local completed_body = "---\nproject: demo\nstatus: Archive\ndate: 2026-08-27\n---\n\n# Completed Archive\n\n"
-    for n = 10, 1, -1 do
+    -- Two recent filler sections plus OLD: OLD must be neither among the 2
+    -- newest nor within the 14-day window to actually age out (a lone
+    -- section is always "among the 2 newest" and would never move).
+    local completed_body = "# Completed Archive\n\n"
+    for n = 2, 1, -1 do
         completed_body = completed_body ..
             string.format("## R%d\n- [x] t\n    > **Completed:** 2026-08-2%d\n\n", n, n % 10)
     end

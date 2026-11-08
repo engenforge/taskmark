@@ -1,10 +1,3 @@
----
-project: Core Tasks
-author: Developer
-status: Active
-date: 2026-06-19
----
-
 # Current Sprint
 
 - [ ] Implement socket timeout handling

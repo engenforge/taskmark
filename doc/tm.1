@@ -14,9 +14,9 @@ tm \- universal taskmark utility
 \fBtm\fR <command> [options]
 .PP
 .SH DESCRIPTION
-\fBtm\fR is the command\-line interface for SPEC\-TASKMARK\-03 taskmark files.\& It
-provides subcommands to sweep completed tasks between task documents, rotate
-sprints, archive aged\-out sections, validate files for spec compliance, and
+\fBtm\fR is the command\-line interface for SPEC\-TASKMARK\-04 taskmark files.\& It
+provides subcommands to sweep completed tasks between task documents,
+archive aged\-out sections, validate files for spec compliance, and
 filter arbitrary text into and out of a payload block.\& The specification it
 implements is documented in \fIdoc/taskmark_spec.\&md\fR.\&
 .PP
@@ -33,39 +33,33 @@ Bootstrap \fI.\&tasks\fR with starter \fIactive.\&tm.\&md\fR, \fIfuture.\&tm.\&m
 \fBsweep\fR
 .RS 4
 Move every `\- [x]` task and its payload out of \fIactive.\&tm.\&md\fR and into
-\fIcompleted.\&tm.\&md\fR, under a "## Sprint <sprint>" heading matching
-\fIactive.\&tm.\&md\fR'\&s current \fBsprint\fR field (appending into that section if
-it is already the most recent one, rather than duplicating it).\&
-Headings and top\-level prose are never swept, even when every task
-beneath them is done.\&
-.PP
-.RE
-\fBrotate\fR
-.RS 4
-A sweep, then update \fBsprint\fR and \fBdate\fR in \fIactive.\&tm.\&md\fR'\&s
-frontmatter and \fBdate\fR in \fIcompleted.\&tm.\&md\fR'\&s.\& Requires \fB\-\-sprint\fR.\&
-\fIfuture.\&tm.\&md\fR is never read or written, and no task is ever promoted
-automatically.\&
+\fIcompleted.\&tm.\&md\fR, bucketed under a "## YYYY\-MM" section for the month
+of the sweep, or "## Sprint \fILABEL\fR" with \fB\-\-sprint\fR.\& Tasks within a
+section and sections within the file are kept newest first.\& Headings
+and top\-level prose in \fIactive.\&tm.\&md\fR are never swept, even when every
+task beneath them is done.\& \fIfuture.\&tm.\&md\fR is never read or written.\&
 .PP
 .RE
 \fBarchive\fR
 .RS 4
 Move sections aged out of \fIcompleted.\&tm.\&md\fR into
 \fI.\&tasks/archive/<YYYY>/<YYYY\-MM>.\&tm.\&md\fR, grouped by the month of
-each section'\&s most recent \fBCompleted\fR task.\& A section is retained if
-it is among the 10 newest or its most recent \fBCompleted\fR task is dated
-within the last 14 days.\&
+each section'\&s most recent \fBCompleted\fR task and inserted newest first
+beneath the archive file'\&s title.\& A section is retained if it is among
+the 2 newest or its most recent \fBCompleted\fR task is dated within the
+last 14 days.\&
 .PP
 .RE
 \fBvalidate\fR [\-\-fix] [file.\&.\&.\&]
 .RS 4
-Validate taskmark file(s) for SPEC\-TASKMARK\-03 compliance.\& If no \fIfile\fR
+Validate taskmark file(s) for SPEC\-TASKMARK\-04 compliance.\& If no \fIfile\fR
 is given, defaults to the configured active file.\& If \fB\-\-fix\fR is given,
 automatically repairs common formatting errors (over\-indented bullet
 continuations and sub\-lists, wrapped labeled fields, missing blank lines
-after labeled fields, hard tabs, and top\-level dash bullets converted
-to '\&*'\&).\& Exits 0 on success (or successful repair), 1 on validation
-failure or file error.\&
+after labeled fields, prose directly beneath a task or payload, hard
+tabs, leading frontmatter blocks from pre\-0.\&4 files, and top\-level dash
+bullets converted to '\&*'\&).\& The file'\&s newline style is preserved.\& Exits 0 on success (or successful
+repair), 1 on validation failure or file error.\&
 .PP
 .RE
 \fBindent\fR [info]
@@ -95,16 +89,16 @@ Print the version and exit.\&
 .PP
 .RE
 .SH OPTIONS
-\fB\-\-sprint\fR \fIVALUE\fR
+\fB\-\-sprint\fR \fILABEL\fR
 .RS 4
-New sprint identifier to stamp on \fIactive.\&tm.\&md\fR.\& Required with
-\fBrotate\fR.\&
+With \fBsweep\fR: bucket the swept tasks under "## Sprint \fILABEL\fR" instead
+of the current month.\&
 .PP
 .RE
 \fB\-\-dry\-run\fR
 .RS 4
-Report what would move and change nothing.\& Applies to \fBsweep\fR,
-\fBrotate\fR, and \fBarchive\fR.\&
+Report what would move and change nothing.\& Applies to \fBsweep\fR and
+\fBarchive\fR.\&
 .PP
 .RE
 \fB\-\-tasks\-dir\fR \fIDIR\fR
@@ -131,26 +125,26 @@ Planned work not yet scheduled to a sprint.\&
 .RE
 \fI.\&tasks/completed.\&tm.\&md\fR
 .RS 4
-Append\-only archive of completed sprints, newest first.\&
+Strict reverse\-chronological archive of completed work, newest first.\&
 .PP
 .RE
 \fI.\&tasks/archive/<YYYY>/<YYYY\-MM>.\&tm.\&md\fR
 .RS 4
-Sections aged out of \fIcompleted.\&tm.\&md\fR.\& Tool\-managed; never
-hand\-authored, and never rewritten once written.\&
+Sections aged out of \fIcompleted.\&tm.\&md\fR, newest first.\& Tool\-managed;
+never hand\-authored.\&
 .PP
 .RE
 \fI<tasks\-dir>/.\&tm.\&lock\fR
 .RS 4
-Transient lock directory held by \fBsweep\fR, \fBrotate\fR, \fBarchive\fR, and
+Transient lock directory held by \fBsweep\fR, \fBarchive\fR, and
 \fBvalidate \-\-fix\fR for the duration of their read\-modify\-write, so
 concurrent \fBtm\fR runs wait for each other instead of losing updates.\&
 A stale lock left by a killed process may be removed by hand.\&
 .PP
 .RE
 .SH CONFIGURATION
-Configuration uses the same flat `key: value` subset as frontmatter, read
-from two locations, each optional:
+Configuration uses a flat `key: value` format, read from two locations, each
+optional:
 .PP
 .PD 0
 .IP \(bu 4
@@ -175,11 +169,11 @@ option, the local file, the global file, then the built\-in default shown
 above.\& When \fBtasks_dir\fR is not set anywhere and \fI.\&/.\&tasks\fR does not
 exist but \fI.\&/doc/tasks\fR (the pre\-0.\&4 default) does, \fI.\&/doc/tasks\fR is used.\&
 An absent file, an absent key, or an unparseable line falls back
-silently to the next source.\& See \fIdoc/taskmark_spec.\&md\fR §10 for the full
-resolution order and the additional hub\-related keys.\&
+silently to the next source.\& See \fIdoc/taskmark_spec.\&md\fR §9 for the full
+resolution order.\&
 .PP
 .SH SEE ALSO
 \fIdoc/taskmark_spec.\&md\fR
 .RS 4
-The SPEC\-TASKMARK\-03 specification implemented by this tool.\&
+The SPEC\-TASKMARK\-04 specification implemented by this tool.\&
 .RE

@@ -1,7 +1,3 @@
----
-project: Mixed Indent
----
-
 # Tasks
 
 - [ ] A task

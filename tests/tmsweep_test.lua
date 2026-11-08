@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
 -- tests/tmsweep_test.lua — unit + end-to-end tests for tmsweep_core.lua /
--- tmsweep.lua (SPEC-TASKMARK-03 §5.3-§5.5: task-level sweep, blank-line
+-- tmsweep.lua (SPEC-TASKMARK-04 §5.3-§5.5: task-level sweep, blank-line
 -- normalization, and archive aging).
 --
 -- Self-contained runner (no shared harness with other repos — this project's
@@ -225,10 +225,20 @@ do
     local text = join(result)
     local _, count = text:gsub("## Sprint 2026%-S2", "")
     check("insert_into_completed", "does not duplicate the existing sprint heading", count == 1)
-    check("insert_into_completed", "new task appended into the existing section",
-          text:match("Earlier task.-New task") ~= nil)
+    check("insert_into_completed", "new task prepended into the existing section (reverse chronological)",
+          text:match("New task.-Earlier task") ~= nil)
     check("insert_into_completed", "older sprint section is untouched and still follows",
-          text:match("New task.-## Sprint 2026%-S1.-Old task") ~= nil)
+          text:match("Earlier task.-## Sprint 2026%-S1.-Old task") ~= nil)
+end
+
+do
+    -- YYYY-MM formatted heading without 'Sprint' prefix
+    local completed = lines_of([[
+# Completed Archive]])
+    local moved = { { lines = { "- [x] A task", "    > **Completed:** 2026-11-08" } } }
+    local result = core.insert_into_completed(completed, moved, "2026-11")
+    check("insert_into_completed", "formats YYYY-MM heading without Sprint prefix",
+          join(result):match("# Completed Archive\n\n## 2026%-11\n\n%- %[x%] A task") ~= nil)
 end
 
 do
@@ -289,27 +299,63 @@ do
           core.section_completed_date(lines_of("# Sprint\n- [x] t")) == nil)
 end
 
--- ── frontmatter helpers ───────────────────────────────────────────────────
+-- ── insert_into_completed() without a document title ────────────────────
 
 do
-    local lines = lines_of([[
----
-project: demo
-sprint: 2026-S1
-date: 2026-08-01
----
+    -- No `# Title`: the first heading is itself the top section. A matching
+    -- top section is prepended into, never duplicated.
+    local completed = lines_of([[
+## 2026-11
 
-# Current Sprint]])
-    check("frontmatter", "frontmatter_project reads the project field",
-          core.frontmatter_project(lines) == "demo")
-    local bumped_date = core.bump_frontmatter_date(lines, "2026-09-01")
-    check("frontmatter", "bump_frontmatter_date replaces only the date value",
-          bumped_date[4] == "date: 2026-09-01" and bumped_date[3] == "sprint: 2026-S1")
-    local bumped_sprint = core.bump_frontmatter_sprint(lines, "2026-S2")
-    check("frontmatter", "bump_frontmatter_sprint replaces only the sprint value",
-          bumped_sprint[3] == "sprint: 2026-S2" and bumped_sprint[4] == "date: 2026-08-01")
-    check("frontmatter", "original lines untouched by either bump",
-          lines[3] == "sprint: 2026-S1" and lines[4] == "date: 2026-08-01")
+- [x] Old task
+    > **Completed:** 2026-11-01
+
+## 2026-10
+
+- [x] Older task]])
+    local moved = { { lines = { "- [x] New task" } } }
+    local text = join(core.insert_into_completed(completed, moved, "2026-11"))
+    local _, count = text:gsub("## 2026%-11", "")
+    check("insert_into_completed", "no title: existing top section is not duplicated", count == 1, text)
+    check("insert_into_completed", "no title: new task prepended into the top section",
+          text:match("^## 2026%-11\n\n%- %[x%] New task\n\n%- %[x%] Old task") ~= nil, text)
+end
+
+do
+    -- No `# Title` and the top section is older: the new section goes
+    -- above it, at the top of the file.
+    local completed = lines_of([[
+## 2026-10
+
+- [x] Older task]])
+    local moved = { { lines = { "- [x] New task" } } }
+    local text = join(core.insert_into_completed(completed, moved, "2026-11"))
+    check("insert_into_completed", "no title: new section inserted above the older one",
+          text:match("^## 2026%-11\n\n%- %[x%] New task\n\n## 2026%-10") ~= nil, text)
+end
+
+do
+    -- Preamble prose with no headings stays above the inserted section.
+    local completed = lines_of("Notes about this archive.")
+    local moved = { { lines = { "- [x] New task" } } }
+    local text = join(core.insert_into_completed(completed, moved, "2026-11"))
+    check("insert_into_completed", "no headings: section appended after preamble prose",
+          text == "Notes about this archive.\n\n## 2026-11\n\n- [x] New task", text)
+end
+
+-- ── prepend_blocks() (archive files, newest first) ───────────────────────
+
+do
+    local archive = lines_of([[
+# Archived Tasks — 2026-01
+
+## Sprint OLDER
+
+- [x] older]])
+    local blocks = { { lines = { "## Sprint NEWER", "", "- [x] newer" } } }
+    local text = join(core.prepend_blocks(archive, blocks))
+    check("prepend_blocks", "new section lands directly beneath the archive title",
+          text == "# Archived Tasks — 2026-01\n\n## Sprint NEWER\n\n- [x] newer\n\n## Sprint OLDER\n\n- [x] older", text)
 end
 
 -- ── cap_completed (archive aging, pure) ──────────────────────────────────
@@ -351,6 +397,29 @@ do
     check("cap_completed", "no-op when all sections are recent", nc == nil and groups == nil)
 end
 
+do
+    -- Default retention: the 2 newest sections stay regardless of age;
+    -- older ones go once their newest Completed stamp passes 14 days.
+    local completed = lines_of([[
+# Completed Archive
+
+## 2026-08
+- [x] a
+    > **Completed:** 2026-08-01
+
+## 2026-07
+- [x] b
+    > **Completed:** 2026-07-01
+
+## 2026-06
+- [x] c
+    > **Completed:** 2026-06-01]])
+    local nc, groups = core.cap_completed(completed, { now = "2026-12-01T00:00:00Z" })
+    check("cap_completed", "default keep_min is 2 sections",
+          groups ~= nil and #groups == 1 and groups[1].month == "06"
+          and join(nc):match("## 2026%-07") ~= nil and not join(nc):match("## 2026%-06"))
+end
+
 -- ── end-to-end CLI ────────────────────────────────────────────────────────
 
 local function write_file(path, content)
@@ -386,28 +455,15 @@ end
 
 do
     local dir = tmpdir()
-    local active = [[---
-project: demo
-status: Active
-sprint: 2026-S1
-date: 2026-08-01
----
-
+    local active = [[
 # Current Sprint
 
 - [ ] Pending task
 
 - [x] Done task
     > **Completed:** 2026-09-01]]
-    local completed = [[---
-project: demo
-status: Archive
-date: 2026-08-01
----
-
-# Completed Archive]]
     write_file(dir .. "/active.tm.md", active)
-    write_file(dir .. "/completed.tm.md", completed)
+    write_file(dir .. "/completed.tm.md", "# Completed Archive")
 
     local out, code = run_cli(string.format("--sweep %s/active.tm.md %s/completed.tm.md", dir, dir))
     check("e2e sweep", "exit 0", code == 0)
@@ -416,28 +472,31 @@ date: 2026-08-01
     check("e2e sweep", "active.tm.md keeps the pending task and drops the done one",
           (read_file(dir .. "/active.tm.md") or ""):match("Pending task") ~= nil
           and not (read_file(dir .. "/active.tm.md") or ""):match("Done task"))
-    check("e2e sweep", "completed.tm.md gains a Sprint 2026-S1 section with the task",
-          (read_file(dir .. "/completed.tm.md") or ""):match("## Sprint 2026%-S1") ~= nil
-          and (read_file(dir .. "/completed.tm.md") or ""):match("Done task") ~= nil)
+    local month = os.date("%Y-%m")
+    check("e2e sweep", "completed.tm.md gains a ## <sweep month> section with the task",
+          (read_file(dir .. "/completed.tm.md") or ""):find("## " .. month .. "\n\n- [x] Done task", 1, true) ~= nil)
 
+    os.execute("rm -rf " .. dir)
+end
+
+do
+    -- --sprint LABEL buckets the swept tasks under "## Sprint LABEL".
+    local dir = tmpdir()
+    write_file(dir .. "/active.tm.md", "# Current Sprint\n\n- [x] Sprint task\n")
+    write_file(dir .. "/completed.tm.md", "# Completed Archive\n")
+    local out, code = run_cli(string.format("--sweep --sprint 2026-S2 %s/active.tm.md", dir))
+    check("e2e sweep --sprint", "exit 0", code == 0, out)
+    check("e2e sweep --sprint", "tasks bucketed under ## Sprint 2026-S2",
+          (read_file(dir .. "/completed.tm.md") or ""):find("## Sprint 2026-S2\n\n- [x] Sprint task", 1, true) ~= nil)
     os.execute("rm -rf " .. dir)
 end
 
 do
     -- Sweeping a file with nothing to sweep changes nothing and exits 0.
     local dir = tmpdir()
-    local active = [[---
-project: demo
-status: Active
-sprint: 2026-S1
-date: 2026-08-01
----
-
-# Current Sprint
-
-- [ ] Only a pending task]]
+    local active = "# Current Sprint\n\n- [ ] Only a pending task"
     write_file(dir .. "/active.tm.md", active)
-    write_file(dir .. "/completed.tm.md", "---\nproject: demo\nstatus: Archive\ndate: 2026-08-01\n---\n\n# Completed Archive")
+    write_file(dir .. "/completed.tm.md", "# Completed Archive")
 
     local out, code = run_cli(string.format("--sweep %s/active.tm.md %s/completed.tm.md", dir, dir))
     check("e2e sweep", "nothing to sweep: exit 0", code == 0)
@@ -449,18 +508,8 @@ end
 do
     -- --dry-run reports without changing files.
     local dir = tmpdir()
-    local active = [[---
-project: demo
-status: Active
-sprint: 2026-S1
-date: 2026-08-01
----
-
-# Current Sprint
-
-- [x] Done task
-    > **Completed:** 2026-09-01]]
-    local completed = "---\nproject: demo\nstatus: Archive\ndate: 2026-08-01\n---\n\n# Completed Archive"
+    local active = "# Current Sprint\n\n- [x] Done task\n    > **Completed:** 2026-09-01"
+    local completed = "# Completed Archive"
     write_file(dir .. "/active.tm.md", active)
     write_file(dir .. "/completed.tm.md", completed)
 
@@ -474,57 +523,38 @@ date: 2026-08-01
 end
 
 do
-    -- --rotate requires --sprint.
-    local dir = tmpdir()
-    write_file(dir .. "/active.tm.md", "---\nproject: demo\nstatus: Active\nsprint: 2026-S1\ndate: 2026-08-01\n---\n\n# Current Sprint\n")
-    write_file(dir .. "/completed.tm.md", "---\nproject: demo\nstatus: Archive\ndate: 2026-08-01\n---\n\n# Completed Archive")
-
-    local out, code = run_cli(string.format("--rotate %s/active.tm.md %s/completed.tm.md", dir, dir))
-    check("e2e rotate", "without --sprint: non-zero exit", code ~= 0)
-    check("e2e rotate", "without --sprint: reports the requirement", out:match("%-%-sprint") ~= nil)
-
-    os.execute("rm -rf " .. dir)
+    -- Rotation was removed in SPEC-TASKMARK-04.
+    local out, code = run_cli("--rotate --sprint 2026-S2")
+    check("cli", "--rotate is no longer an option", code ~= 0 and out:match("Unknown option") ~= nil, out)
 end
 
 do
-    -- --rotate bumps sprint/date even when there is nothing to sweep.
+    -- --archive lands sections under archive/<YYYY>/<YYYY-MM>.tm.md,
+    -- newest first beneath the archive title.
     local dir = tmpdir()
-    write_file(dir .. "/active.tm.md", "---\nproject: demo\nstatus: Active\nsprint: 2026-S1\ndate: 2026-08-01\n---\n\n# Current Sprint\n\n- [ ] still pending\n")
-    write_file(dir .. "/completed.tm.md", "---\nproject: demo\nstatus: Archive\ndate: 2026-08-01\n---\n\n# Completed Archive")
-
-    local out, code = run_cli(string.format("--rotate --sprint 2026-S2 %s/active.tm.md %s/completed.tm.md", dir, dir))
-    check("e2e rotate", "no-op sweep still exits 0", code == 0)
-    local today_line = "date: " .. os.date("%Y-%m-%d")
-    local active_after = read_file(dir .. "/active.tm.md") or ""
-    check("e2e rotate", "sprint bumped in active.tm.md", active_after:match("sprint: 2026%-S2") ~= nil)
-    check("e2e rotate", "date bumped in active.tm.md", active_after:find(today_line, 1, true) ~= nil)
-    local completed_after = read_file(dir .. "/completed.tm.md") or ""
-    check("e2e rotate", "date bumped in completed.tm.md", completed_after:find(today_line, 1, true) ~= nil)
-
-    os.execute("rm -rf " .. dir)
-end
-
-do
-    -- --archive lands sections under archive/<YYYY>/<YYYY-MM>.tm.md.
-    local dir = tmpdir()
-    local body = "---\nproject: demo\nstatus: Archive\ndate: 2026-08-27\n---\n\n# Completed Archive\n\n"
-    for n = 10, 1, -1 do
-        body = body .. string.format("## R%d\n- [x] t\n    > **Completed:** 2026-08-2%d\n\n", n, n % 10)
+    local body = "# Completed Archive\n\n"
+    for n = 2, 1, -1 do
+        body = body .. string.format("## R%d\n- [x] t\n    > **Completed:** 2026-08-2%d\n\n", n, n)
     end
+    body = body .. "## NEWER\n- [x] newer thing\n    > **Completed:** 2026-01-20\n\n"
     body = body .. "## OLD\n- [x] old thing\n    > **Completed:** 2026-01-15\n"
     write_file(dir .. "/completed.tm.md", body)
-    write_file(dir .. "/active.tm.md", "---\nproject: demo\nstatus: Active\nsprint: 2026-S1\ndate: 2026-08-27\n---\n\n# Current Sprint\n")
+    write_file(dir .. "/active.tm.md", "# Current Sprint\n")
+    os.execute("mkdir -p " .. dir .. "/archive/2026")
+    write_file(dir .. "/archive/2026/2026-01.tm.md", "# Archived Tasks — 2026-01\n\n## OLDEST\n- [x] oldest\n    > **Completed:** 2026-01-02\n")
 
     local out, code = run_cli(string.format("--archive %s/active.tm.md %s/completed.tm.md", dir, dir))
-    check("e2e archive", "exit 0", code == 0)
-    check("e2e archive", "reports the archived section",
-          out:match('Archived sprint: "OLD"') ~= nil and out:match("2026/2026%-01%.tm%.md") ~= nil)
-    local archived = read_file(dir .. "/archive/2026/2026-01.tm.md")
-    check("e2e archive", "archive file created at archive/<YYYY>/<YYYY-MM>.tm.md", archived ~= nil)
-    check("e2e archive", "archive file uses flat frontmatter", archived and archived:match("^%-%-%-\n") ~= nil)
-    check("e2e archive", "archive file contains the aged section", archived and archived:match("OLD") ~= nil)
-    check("e2e archive", "OLD removed from completed.tm.md",
-          not (read_file(dir .. "/completed.tm.md") or ""):match("OLD"))
+    check("e2e archive", "exit 0", code == 0, out)
+    check("e2e archive", "reports the archived sections",
+          out:match('Archived section: "OLD"') ~= nil and out:match('Archived section: "NEWER"') ~= nil
+          and out:match("2026/2026%-01%.tm%.md") ~= nil, out)
+    local archived = read_file(dir .. "/archive/2026/2026-01.tm.md") or ""
+    check("e2e archive", "archive file keeps its title first", archived:match("^# Archived Tasks — 2026%-01\n") ~= nil)
+    check("e2e archive", "archive file is newest first",
+          archived:match("## NEWER.-## OLD\n.-## OLDEST") ~= nil, archived)
+    local remaining = read_file(dir .. "/completed.tm.md") or ""
+    check("e2e archive", "aged sections removed; 2 newest kept",
+          not remaining:match("OLD") and not remaining:match("NEWER") and remaining:match("## R2.-## R1") ~= nil, remaining)
 
     os.execute("rm -rf " .. dir)
 end

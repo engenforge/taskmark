@@ -1,7 +1,3 @@
----
-project: Label No Blank
----
-
 # Tasks
 
 - [ ] A task

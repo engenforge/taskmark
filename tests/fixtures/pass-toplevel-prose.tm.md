@@ -1,7 +1,3 @@
----
-project: Raw Content
----
-
 # Tasks
 
 - [ ] A task

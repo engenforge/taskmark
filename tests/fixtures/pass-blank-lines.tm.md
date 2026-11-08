@@ -1,7 +1,3 @@
----
-project: Blank Lines
----
-
 # Tasks
 
 - [ ] First task

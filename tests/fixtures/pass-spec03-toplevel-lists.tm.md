@@ -1,9 +1,3 @@
----
-project: TopLevelLists
-status: Active
-date: 2026-10-27
----
-
 # Sprint Preamble
 
 * Asterisk top-level list item

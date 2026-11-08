@@ -1,7 +1,3 @@
----
-project: Tab In Fence
----
-
 # Tasks
 
 - [ ] Task with a tab-indented code sample

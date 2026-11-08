@@ -1,7 +1,3 @@
----
-project: Nested Task
----
-
 # Tasks
 
 - [ ] Parent task

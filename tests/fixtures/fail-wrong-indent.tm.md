@@ -1,7 +1,3 @@
----
-project: Wrong Indent
----
-
 # Tasks
 
 - [ ] A task

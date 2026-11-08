@@ -7,9 +7,9 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
 - Run full test suite: `make test` (or `make check`)
 - Run individual test runners:
   - Line-scanner unit tests: `lua tests/tmscan_test.lua`
-  - Frontmatter/config unit tests: `lua tests/tmmeta_test.lua`
+  - Config reader unit tests: `lua tests/tmmeta_test.lua`
   - Validator tests: `lua tests/test_runner.lua src/tmval.lua tests/fixtures`
-  - Sweep/rotate/archive tests: `lua tests/tmsweep_test.lua`
+  - Sweep/archive tests: `lua tests/tmsweep_test.lua`
   - Init tests: `lua tests/tminit_test.lua`
   - Config resolution tests: `lua tests/tmconfig_test.lua`
   - Filter tests: `lua tests/tmfilter_test.lua`
@@ -28,7 +28,7 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
 
 ## Sources of truth
 
-1. **`doc/taskmark_spec.md`** is the normative authority for the SPEC-TASKMARK-03 specification.
+1. **`doc/taskmark_spec.md`** is the normative authority for the SPEC-TASKMARK-04 specification.
 2. The validator (`src/tmval.lua`) and line scanner (`src/tmscan.lua`) must enforce what the specification defines.
 3. Informative documents (`README.md`, `doc/tm.1.scd`, etc.) follow the specification.
 

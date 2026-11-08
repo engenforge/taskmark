@@ -1,7 +1,3 @@
----
-project: Tab Test
----
-
 # Tasks
 
 - [ ] Indent with tabs

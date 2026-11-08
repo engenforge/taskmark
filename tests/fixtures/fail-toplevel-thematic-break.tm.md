@@ -1,7 +1,3 @@
----
-project: Thematic Break
----
-
 # Tasks
 
 ***

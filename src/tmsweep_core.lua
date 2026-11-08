@@ -1,12 +1,11 @@
 -- tmsweep_core.lua — Pure parsing/decision/mutation logic used by tmsweep
--- (SPEC-TASKMARK-03 §5.3-§5.5): task-level sweep, blank-line normalization,
+-- (SPEC-TASKMARK-04 §5.3-§5.5): task-level sweep, blank-line normalization,
 -- and archive aging. Kept require-able so tests can exercise each function
 -- directly.
 
 local script_dir = arg and arg[0] and arg[0]:match("^(.*)/[^/]+$") or "."
 package.path = script_dir .. "/?.lua;" .. script_dir .. "/../src/?.lua;" .. package.path
 local tmscan = require("tmscan")
-local tmmeta = require("tmmeta")
 
 local M = {}
 
@@ -74,30 +73,6 @@ function M.section_completed_date(block_lines)
         end
     end
     return latest
-end
-
--- Read the `project` frontmatter field value from lines. Returns nil if absent.
-function M.frontmatter_project(lines)
-    local tbl = tmmeta.split_frontmatter(lines)
-    if not tbl then return nil end
-    local v = tbl.project
-    if type(v) == "string" then return v end
-    return nil
-end
-
--- Replace the `date:` field's value inside the leading frontmatter block.
--- Lines outside the frontmatter -- and the frontmatter itself when there is
--- no `date:` line to replace -- are left untouched.
-function M.bump_frontmatter_date(lines, new_date)
-    local out = tmmeta.set_date(lines, new_date)
-    return out or lines
-end
-
--- Replace the `sprint:` field's value the same way bump_frontmatter_date
--- replaces `date:`.
-function M.bump_frontmatter_sprint(lines, new_sprint)
-    local out = tmmeta.set_field(lines, "sprint", new_sprint)
-    return out or lines
 end
 
 -- Remove the full line ranges of the given nodes from lines. Surgical
@@ -188,97 +163,94 @@ function M.sweep(active_lines)
     return kept, moved
 end
 
--- Insert moved task blocks into completed_lines, immediately after its
--- first heading line (located by position, never by matching heading
--- text). When `sprint_label` is given and a "## Sprint <sprint_label>"
--- heading is already the very next heading after that first one, the
--- blocks are appended into that existing section instead of creating a
--- duplicate. Surgical mutation: only collapses doubled blank lines at the
--- two splice seams; content inside each moved block is preserved verbatim.
+-- The document title: the first heading, when it is level 1. nil when the
+-- first heading is a section heading or there are no headings at all.
+local function title_line(lines)
+    for i = 1, #lines do
+        local kind, fields = tmscan.classify(lines[i])
+        if kind == "heading" then
+            return fields.level == 1 and i or nil
+        end
+    end
+    return nil
+end
+
+-- The first heading after line `after` (0 for the whole document), and its
+-- classified fields.
+local function next_heading(lines, after)
+    for i = after + 1, #lines do
+        local kind, fields = tmscan.classify(lines[i])
+        if kind == "heading" then return i, fields end
+    end
+    return nil
+end
+
+-- Join chunks (arrays of lines) with one blank line between consecutive
+-- chunks; no leading or trailing separator.
+local function join_chunks(chunks)
+    local block = {}
+    for _, chunk in ipairs(chunks) do
+        if #block > 0 then block[#block + 1] = "" end
+        for _, l in ipairs(chunk) do block[#block + 1] = l end
+    end
+    return block
+end
+
+-- Insert moved task blocks into completed_lines, newest first (§6.3).
+--
+-- The document title is the first heading when it is level 1 (its text is
+-- never matched). The *top section* is the first heading beneath the title,
+-- or the first heading of all when there is no title. When `sprint_label`
+-- names a heading ("## Sprint <label>", or "## <YYYY-MM>" as given) that is
+-- already the top section, the blocks are prepended into it, directly
+-- beneath its heading. Otherwise a new section is inserted at the top:
+-- beneath the title, or above the first heading when there is no title, or
+-- after any preamble prose when there are no headings at all. Content
+-- inside each moved block is preserved verbatim; blank lines are normalized.
 function M.insert_into_completed(completed_lines, moved_blocks, sprint_label)
     if not moved_blocks or #moved_blocks == 0 then return completed_lines end
 
-    local first_heading_line = nil
-    for i = 1, #completed_lines do
-        if tmscan.classify(completed_lines[i]) == "heading" then
-            first_heading_line = i
-            break
-        end
-    end
-
-    local sprint_heading = sprint_label and sprint_label ~= "" and ("Sprint " .. sprint_label) or nil
-
-    -- The section immediately following the first heading, if it already
-    -- matches the current sprint.
-    local existing_start, existing_end
-    if first_heading_line and sprint_heading then
-        for i = first_heading_line + 1, #completed_lines do
-            local kind, fields = tmscan.classify(completed_lines[i])
-            if kind == "heading" then
-                if fields.level == 2 and fields.text == sprint_heading then
-                    existing_start = i
-                    existing_end = #completed_lines + 1
-                    for j = i + 1, #completed_lines do
-                        if tmscan.classify(completed_lines[j]) == "heading" then
-                            existing_end = j
-                            break
-                        end
-                    end
-                end
-                break -- only the very next heading counts as "the top section"
-            end
-        end
-    end
-
-    -- Blank lines only ever separate chunks *within* block; the outer
-    -- leading/trailing separator is splice_with_seams' job, so the first
-    -- chunk added here must not carry one of its own or that seam doubles.
-    local block = {}
-    local function add_chunk(chunk_lines)
-        if #block > 0 then block[#block + 1] = "" end
-        for _, l in ipairs(chunk_lines) do block[#block + 1] = l end
-    end
-
-    local insert_at
-
-    if existing_start then
-        insert_at = existing_end
-        for _, mb in ipairs(moved_blocks) do add_chunk(mb.lines) end
-    else
-        if first_heading_line then
-            insert_at = first_heading_line + 1
+    local sprint_heading
+    if sprint_label and sprint_label ~= "" then
+        if sprint_label:match("^Sprint") or sprint_label:match("^%d%d%d%d%-%d%d$") then
+            sprint_heading = sprint_label
         else
-            local fm, body_start = tmmeta.split_frontmatter(completed_lines)
-            insert_at = fm and body_start or 1
+            sprint_heading = "Sprint " .. sprint_label
         end
-        if sprint_heading then add_chunk({ "## " .. sprint_heading }) end
-        for _, mb in ipairs(moved_blocks) do add_chunk(mb.lines) end
     end
 
-    return splice_with_seams(completed_lines, insert_at, block)
+    local title = title_line(completed_lines)
+    local top, top_fields = next_heading(completed_lines, title or 0)
+
+    local chunks = {}
+    local insert_at
+    if sprint_heading and top and top_fields.level == 2 and top_fields.text == sprint_heading then
+        insert_at = top + 1
+    else
+        if title then
+            insert_at = title + 1
+        elseif top then
+            insert_at = top
+        else
+            insert_at = #completed_lines + 1
+        end
+        if sprint_heading then chunks[#chunks + 1] = { "## " .. sprint_heading } end
+    end
+    for _, mb in ipairs(moved_blocks) do chunks[#chunks + 1] = mb.lines end
+
+    return M.normalize_blank_lines(splice_with_seams(completed_lines, insert_at, join_chunks(chunks)))
 end
 
--- Append `blocks` (array of {lines=...}) to the end of `lines`, separated
--- from the existing content and from each other by exactly one blank line.
--- For archive files (§5.5): archive files are append-only and are never
--- rewritten, so this only ever touches the new tail -- nothing before the
--- seam is read as a tree, collapsed, or otherwise modified.
-function M.append_blocks(lines, blocks)
-    local result = {}
-    for i = 1, #lines do result[#result + 1] = lines[i] end
-    while #result > 0 and result[#result] == "" do
-        table.remove(result)
-    end
-    for _, b in ipairs(blocks) do
-        -- Only add a separator when the tail isn't already blank -- a
-        -- block that itself ends with a blank line (its own trailing
-        -- separator, carried over from where it was cut out) already
-        -- serves as one. Block content itself is never inspected or
-        -- altered, so fence interiors stay byte-for-byte.
-        if #result > 0 and result[#result] ~= "" then result[#result + 1] = "" end
-        for _, l in ipairs(b.lines) do result[#result + 1] = l end
-    end
-    return result
+-- Prepend `blocks` (array of {lines=...}, newest first) to an archive file
+-- (§6.4): directly beneath its title, or at the top when it has none, so an
+-- archive file reads newest first like completed.tm.md. Block content is
+-- never altered; blank lines are normalized.
+function M.prepend_blocks(lines, blocks)
+    local chunks = {}
+    for _, b in ipairs(blocks) do chunks[#chunks + 1] = b.lines end
+    local title = title_line(lines)
+    local insert_at = title and title + 1 or 1
+    return M.normalize_blank_lines(splice_with_seams(lines, insert_at, join_chunks(chunks)))
 end
 
 -- ── Blank-line normalization (§5.3) ─────────────────────────────────────
@@ -327,7 +299,7 @@ function M.cap_completed(completed_lines, opts)
         return nil, nil
     end
 
-    local keep_min = (opts.keep_min ~= nil) and opts.keep_min or 10
+    local keep_min = (opts.keep_min ~= nil) and opts.keep_min or 2
     local keep_days = (opts.keep_days ~= nil) and opts.keep_days or 14
     local cutoff_seconds = keep_days * 86400
 

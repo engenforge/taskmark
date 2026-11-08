@@ -1,8 +1,3 @@
----
-project: Test
-status: Active
----
-
 # Tasks
 
 - [ ] Implement timeout

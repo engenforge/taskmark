@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
 -- tests/tmfilter_test.lua — unit + round-trip tests for tmfilter.lua
--- (SPEC-TASKMARK-03 §9.1 indent/dedent payload filters).
+-- (SPEC-TASKMARK-04 §8.1 indent/dedent payload filters).
 
 local script_dir = (arg[0] or "./tests/tmfilter_test.lua"):match("^(.*)/[^/]+$") or "."
 local tmfilter_path = script_dir .. "/../src/tmfilter.lua"

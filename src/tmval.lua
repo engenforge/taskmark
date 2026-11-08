@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
--- tm validate — SPEC-TASKMARK-03 §1.5 validator. Checks a document against
--- rules V1 through V12 and nothing else: no warning is fatal, and tag shape
+-- tm validate — SPEC-TASKMARK-04 §1.5 validator. Checks a document against
+-- rules V3 through V14 and nothing else: no warning is fatal, and tag shape
 -- or placement is never checked. One subcommand of the `tm` universal
 -- taskmark utility; also runnable directly as `lua tmval.lua`.
 -- Usage: tm validate [options] [file...]
@@ -9,13 +9,12 @@
 local script_dir = arg and arg[0] and arg[0]:match("^(.*)/[^/]+$") or "."
 package.path = script_dir .. "/?.lua;" .. script_dir .. "/../src/?.lua;" .. package.path
 local tmconfig = require("tmconfig")
-local tmmeta   = require("tmmeta")
 local tmscan   = require("tmscan")
 local tmio     = require("tmio")
 
 local function show_help()
     print([[
-tm validate — SPEC-TASKMARK-03 taskmark validator
+tm validate — SPEC-TASKMARK-04 taskmark validator
 
 Usage:
   tm validate [options] [file...]
@@ -82,36 +81,25 @@ local function is_raw_html_start(line)
     return false
 end
 
--- V1/V2: the frontmatter block. Returns the parsed table and the body's
--- start index on success, or nil plus one {line, rule, msg} error.
-local function check_frontmatter(lines)
-    local tbl, second, bad_line = tmmeta.split_frontmatter(lines)
-    if tbl then return tbl, second end
-
-    local reason = second
-    if reason == "missing" then
-        return nil, nil, { line = 1, rule = "V1",
-            msg = "frontmatter block missing, or the file does not begin with a `---` line" }
-    elseif reason == "unterminated" then
-        return nil, nil, { line = #lines, rule = "V1",
-            msg = "frontmatter block is not terminated by a `---` line" }
-    else -- "bad_line"
-        return nil, nil, { line = (bad_line or 0) + 1, rule = "V2",
-            msg = "frontmatter line outside the flat `key: value` subset" }
+-- The last line of a leading pre-SPEC-TASKMARK-04 frontmatter block: line 1
+-- is `---`, and a closing `---` (or `...`) follows with nothing but blank,
+-- `#` comment, or `key: value` lines between. nil when there is none.
+local function leading_frontmatter_end(lines)
+    if lines[1] ~= "---" then return nil end
+    for j = 2, #lines do
+        local l = lines[j]
+        if l == "---" or l == "..." then return j end
+        if not (l:match("^%s*$") or l:match("^%s*#") or l:match("^[%w_%-]+:")) then
+            return nil
+        end
     end
+    return nil
 end
 
--- V3-V12: the body, line by line. `errors` collects {line, rule, msg}.
-local function validate_body(lines, body_start, errors)
+-- V3-V14: validate lines 1..#lines. `errors` collects {line, rule, msg}.
+local function validate_body(lines, errors)
     local function add(line, rule, msg)
         errors[#errors + 1] = { line = line, rule = rule, msg = msg }
-    end
-
-    -- V3 also applies to the frontmatter block itself.
-    for i = 1, body_start - 1 do
-        if lines[i] and lines[i]:find("\t", 1, true) then
-            add(i, "V3", "hard tab in the frontmatter block")
-        end
     end
 
     local in_payload = false
@@ -122,7 +110,18 @@ local function validate_body(lines, body_start, errors)
     local prev_kind = nil
     local in_list_item = false
 
-    for i = body_start, #lines do
+    -- V14: frontmatter was removed in SPEC-TASKMARK-04. Report the block
+    -- once and skip it, rather than flagging its `---` and `key: value`
+    -- lines as a thematic break and a setext heading.
+    local first = 1
+    local fm_end = leading_frontmatter_end(lines)
+    if fm_end then
+        add(1, "V14", "frontmatter block (removed in SPEC-TASKMARK-04); delete lines 1-" .. fm_end ..
+            " or run `tm validate --fix`")
+        first = fm_end + 1
+    end
+
+    for i = first, #lines do
         local raw = lines[i]
         local kind, fields = tmscan.classify(raw)
 
@@ -167,14 +166,14 @@ local function validate_body(lines, body_start, errors)
 
             if not exempt then
                 -- V8: leading whitespace in payload content.
-                -- SPEC-TASKMARK-03 allows up to 4 spaces of content indent (columns 5-8 total)
+                -- SPEC-TASKMARK-04 allows up to 4 spaces of content indent (columns 5-8 total)
                 -- if and only if continuing an active list item without an intervening blank line.
                 local content_spaces = fields.content:match("^( *)")
                 local num_spaces = content_spaces and #content_spaces or 0
 
                 if num_spaces > 0 then
                     if in_list_item and num_spaces <= 4 and prev_kind ~= "blank" then
-                        -- Allowed list continuation or sub-list under SPEC-TASKMARK-03.
+                        -- Allowed list continuation or sub-list under SPEC-TASKMARK-04.
                     else
                         add(i, "V8", "payload content has further leading whitespace outside a fenced code block")
                         in_list_item = false
@@ -205,7 +204,7 @@ local function validate_body(lines, body_start, errors)
                         prev_was_label = true
                         in_list_item = false
                     elseif prev_was_label and fields.content:match("^> (.*)$") and not fields.content:match("^> %s*>") then
-                        -- SPEC-TASKMARK-03 V10: multi-line labeled field continuation
+                        -- SPEC-TASKMARK-04 V10: multi-line labeled field continuation
                         prev_was_label = true
                         in_list_item = false
                     else
@@ -241,6 +240,13 @@ local function validate_body(lines, body_start, errors)
             if in_payload and fence_open then
                 add(fence_open_line, "V12", "code fence opened in a payload block is not closed before the payload ends")
             end
+
+            -- V13: CommonMark lazy continuation would absorb top-level
+            -- prose directly beneath a task line or its payload.
+            if (prev_kind == "payload" or prev_kind == "task") and kind == "prose" then
+                add(i, "V13", "top-level prose directly follows a task or its payload with no blank line between them")
+            end
+
             in_payload, fence_open, fence_open_line, prev_was_label = false, false, nil, false
             in_list_item = false
             fence_char, fence_len = nil, nil
@@ -272,41 +278,28 @@ local function validate_body(lines, body_start, errors)
     end
 end
 
--- Validate an array of line strings against SPEC-TASKMARK-03. Returns sorted errors table.
+-- Validate an array of line strings against SPEC-TASKMARK-04. Returns sorted errors table.
 local function validate_lines(lines)
     local errors = {}
-    local tbl, body_start, fm_error = check_frontmatter(lines)
-    if not tbl then
-        errors[1] = fm_error
-    else
-        validate_body(lines, body_start, errors)
-    end
+    validate_body(lines, errors)
     table.sort(errors, function(a, b) return a.line < b.line end)
     return errors
 end
 
--- Automatically repair common formatting errors in Taskmark documents (V3, V6, V7, V8, V9, V10, V11).
+-- Automatically repair common formatting errors in Taskmark documents (V3, V6, V7, V8, V9, V10, V11, V13, V14).
 -- Returns fixed_lines array and success boolean.
 local function fix_document(lines)
-    local tbl, body_start = check_frontmatter(lines)
-    if not tbl then
-        -- Attempt to fix hard tabs in frontmatter
-        for i = 1, #lines do
-            if lines[i]:find("\t", 1, true) then
-                lines[i] = lines[i]:gsub("\t", " ")
-            end
-        end
-        tbl, body_start = check_frontmatter(lines)
-        if not tbl then
-            return lines, false
-        end
+    -- V14: drop a leading frontmatter block and the blank lines after it.
+    local fm_end = leading_frontmatter_end(lines)
+    if fm_end then
+        local rest = {}
+        local j = fm_end + 1
+        while lines[j] and lines[j]:match("^%s*$") do j = j + 1 end
+        for k = j, #lines do rest[#rest + 1] = lines[k] end
+        lines = rest
     end
 
     local new_lines = {}
-    for i = 1, body_start - 1 do
-        new_lines[#new_lines + 1] = lines[i]:gsub("\t", " ")
-    end
-
     local in_payload = false
     local fence_open = false
     local fence_char, fence_len = nil, nil
@@ -314,7 +307,7 @@ local function fix_document(lines)
     local prev_kind = nil
     local in_list_item = false
 
-    local i = body_start
+    local i = 1
     while i <= #lines do
         local raw = lines[i]
         local kind, fields = tmscan.classify(raw)
@@ -388,7 +381,7 @@ local function fix_document(lines)
                             in_list_item = false
                             new_lines[#new_lines + 1] = "    " .. content
                         elseif prev_was_label and content:match("^> (.*)$") and not content:match("^> %s*>") then
-                            -- SPEC-TASKMARK-03: Multi-line labeled field continuation
+                            -- SPEC-TASKMARK-04: Multi-line labeled field continuation
                             prev_was_label = true
                             in_list_item = false
                             new_lines[#new_lines + 1] = "    " .. content
@@ -413,7 +406,7 @@ local function fix_document(lines)
 
                         if num_spaces > 0 then
                             if in_list_item and num_spaces <= 4 and prev_kind ~= "blank" then
-                                -- SPEC-TASKMARK-03: Valid sub-list or continuation indent! Keep content.
+                                -- SPEC-TASKMARK-04: Valid sub-list or continuation indent! Keep content.
                             else
                                 content = content:gsub("^[ \t]+", "")
                                 if content:match("^[%-%*%+] ") or content:match("^%d+[.)] ") then
@@ -464,6 +457,15 @@ local function fix_document(lines)
                     raw = raw:gsub("^%- ", "* ")
                 elseif raw:match("^• ") then
                     raw = raw:gsub("^• ", "* ")
+                end
+                -- V13: separate prose from a task or payload line directly
+                -- above it. Judged on the lines actually emitted, since a
+                -- payload-ending line arrives here on its second pass.
+                local prev = new_lines[#new_lines]
+                local prev_emitted = prev and tmscan.classify(prev)
+                if tmscan.classify(raw) == "prose"
+                    and (prev_emitted == "payload" or prev_emitted == "task") then
+                    new_lines[#new_lines + 1] = ""
                 end
             end
             new_lines[#new_lines + 1] = raw
@@ -522,7 +524,7 @@ local function run(args)
             local errors = validate_lines(lines)
 
             if #errors == 0 then
-                print(string.format("%s[PASS]%s %s conforms to SPEC-TASKMARK-03.", TERM_GREEN, TERM_RESET, file))
+                print(string.format("%s[PASS]%s %s conforms to SPEC-TASKMARK-04.", TERM_GREEN, TERM_RESET, file))
             elseif fix_mode then
                 local fixed_lines, ok = fix_document(lines)
                 local remaining_errors = validate_lines(fixed_lines)
@@ -532,7 +534,7 @@ local function run(args)
                     local nl = tmscan.detect_newline(raw_content)
                     local ok_w, werr = tmio.write_file_atomic(file, table.concat(fixed_lines, nl) .. nl)
                     if not ok_w then tmio.die(werr) end
-                    print(string.format("%s[FIXED]%s %s (repaired %d error(s); now conforms to SPEC-TASKMARK-03).", TERM_YELLOW, TERM_RESET, file, #errors))
+                    print(string.format("%s[FIXED]%s %s (repaired %d error(s); now conforms to SPEC-TASKMARK-04).", TERM_YELLOW, TERM_RESET, file, #errors))
                 else
                     for _, e in ipairs(remaining_errors) do
                         if #files > 1 then

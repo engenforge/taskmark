@@ -1,7 +1,7 @@
 #!/usr/bin/env lua
 -- tests/commonmark_test.lua — the CommonMark conformance oracle.
 --
--- SPEC-TASKMARK-03 §1.2 claims every conforming document is a strict
+-- SPEC-TASKMARK-04 §1.2 claims every conforming document is a strict
 -- CommonMark subset that renders correctly and legibly in any CommonMark
 -- renderer. The runtime does not use a CommonMark parser (tmscan reads
 -- Taskmark's own fixed grammar directly), so that claim needs an
@@ -121,17 +121,8 @@ local function check_oracle(body_text, body_lines)
     return #reasons == 0, reasons
 end
 
--- Split a whole file's lines into a body (stripping frontmatter when it is
--- present and in the flat `---` form; falling back to the raw lines when
--- it is not -- tm init's templates predate that conversion and still use
--- fenced JSON frontmatter, which carries no payload constructs to check).
+-- In SPEC-TASKMARK-04, task files are pure CommonMark without frontmatter.
 local function body_of(lines)
-    local tbl, body_start = tmmeta.split_frontmatter(lines)
-    if tbl then
-        local body = {}
-        for i = body_start, #lines do body[#body + 1] = lines[i] end
-        return body
-    end
     return lines
 end
 
@@ -211,7 +202,7 @@ for _, name in ipairs({ "active.tm.md", "future.tm.md", "completed.tm.md" }) do
 end
 
 -- ── Every file `tm sweep`/`tm archive` write ──────────────────────────────
--- DoD 3 calls for "every file the tool writes"; sweep/rotate/archive are
+-- DoD 3 calls for "every file the tool writes"; sweep/archive are
 -- exactly where rewriting a document could break its CommonMark reading,
 -- so they get their own tmpdir round-trip rather than relying on the
 -- static fixtures above.
@@ -245,9 +236,9 @@ do
     os.execute(string.format(
         "lua %s/../src/tmsweep.lua --sweep --tasks-dir %s >/dev/null 2>&1", script_dir, tasks_dir))
 
-    -- Pad completed.tm.md past keep_min (10) with old, dated sections so
+    -- Pad completed.tm.md past keep_min (2) with old, dated sections so
     -- the swept-in one actually ages out and `tm archive` has something to
-    -- move -- keep_min alone protects any file with 10 or fewer sections
+    -- move -- keep_min alone protects any file with 2 or fewer sections
     -- regardless of date.
     local completed_path = tasks_dir .. "/completed.tm.md"
     local cf = io.open(completed_path, "r")

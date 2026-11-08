@@ -1,9 +1,9 @@
 #!/usr/bin/env lua
--- tmconfig — SPEC-TASKMARK-03 §10 configuration resolution.
+-- tmconfig — SPEC-TASKMARK-04 §9 configuration resolution.
 --
 -- Resolves the on-disk paths tm's subcommands operate on (the .tasks/
 -- directory itself, active.tm.md/future.tm.md/completed.tm.md, the archive/
--- subdirectory name, and the hub locations) from, per key, in order of
+-- subdirectory name) from, per key, in order of
 -- precedence:
 --   1. Explicit values passed by the caller (typically parsed CLI flags,
 --      e.g. --tasks-dir)
@@ -16,8 +16,8 @@
 -- A missing, unreadable, or malformed config file is never an error --
 -- resolution silently falls through to the next layer, so a project with no
 -- config file behaves exactly as documented before configuration existed.
--- Both files are parsed with the same relaxed flat `key: value` reader as
--- frontmatter (§2.2.1 / §10.1); no serialization dependency of any kind.
+-- Both files are parsed with tmmeta's relaxed flat `key: value` reader
+-- (§9.1); no serialization dependency of any kind.
 
 local function self_dir()
     local s = (debug.getinfo and debug.getinfo(1, "S").source:match("^@(.*)$")) or (arg and arg[0]) or "."
@@ -42,11 +42,6 @@ M.DEFAULTS = {
     future_file    = "future.tm.md",
     completed_file = "completed.tm.md",
     archive_dir    = "archive",
-
-    hub_dir        = "~/tasks",
-    inbox_file     = "inbox.tm.md",
-    dashboard_file = "dashboard.tm.md",
-    registry_file  = "registry.txt",
 }
 
 M.CONFIG_FILENAME = ".taskmarkrc"

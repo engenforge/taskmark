@@ -1,7 +1,3 @@
----
-project: Setext Header
----
-
 Setext Header
 ---
 

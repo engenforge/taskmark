@@ -74,23 +74,17 @@ do
     check("fresh_init", "reports Created for future.tm.md", output:match("Created " .. tasks_dir .. "/future.tm.md") ~= nil)
     check("fresh_init", "reports Created for completed.tm.md", output:match("Created " .. tasks_dir .. "/completed.tm.md") ~= nil)
 
-    local today = os.date("%Y-%m-%d")
-
     -- Content checks
-    local sprint = os.date("%Y") .. "-S1"
     local active_content = read_file(tasks_dir .. "/active.tm.md")
-    local expected_active = string.format(
-        "---\nproject: tasks\nstatus: Active\nsprint: %s\ndate: %s\n---\n\n# Current Sprint\n", sprint, today)
+    local expected_active = "# Current Sprint\n"
     check("fresh_init", "active.tm.md has exact starter content", active_content == expected_active)
 
     local future_content = read_file(tasks_dir .. "/future.tm.md")
-    local expected_future = string.format(
-        "---\nproject: tasks\nstatus: Planned\ndate: %s\n---\n\n# Planned Work\n", today)
+    local expected_future = "# Planned Work\n"
     check("fresh_init", "future.tm.md has exact starter content", future_content == expected_future)
 
     local completed_content = read_file(tasks_dir .. "/completed.tm.md")
-    local expected_completed = string.format(
-        "---\nproject: tasks\nstatus: Archive\ndate: %s\n---\n\n# Completed Archive\n", today)
+    local expected_completed = "# Completed Archive\n"
     check("fresh_init", "completed.tm.md has exact starter content", completed_content == expected_completed)
 
     -- Spec validation
@@ -140,15 +134,8 @@ do
     local tasks_dir = dir .. "/.tasks"
     os.execute("mkdir -p " .. tasks_dir)
 
-    -- Custom active.tm.md with tasks and specific frontmatter
-    local custom_active = [[---
-project: custom_app
-status: Active
-sprint: 2026-S9
-date: 2026-01-15
----
-
-# Current Sprint
+    -- Custom active.tm.md with tasks
+    local custom_active = [[# Current Sprint
 
 - [ ] custom existing task
     > **Context:** Do not overwrite me.

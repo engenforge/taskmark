@@ -1,17 +1,17 @@
 # Taskmark (`tm`)
 
-**Taskmark** is a deterministic, multi-line, plain-text task specification (**SPEC-TASKMARK-03**) and CLI utility (`tm`) designed to work with any text editor and automated parsing tools.
+**Taskmark** is a deterministic, multi-line, plain-text task specification (**SPEC-TASKMARK-04**) and CLI utility (`tm`) designed to work with any text editor and automated parsing tools.
 
-It replaces the single-line constraints of formats like `todo.txt` while maintaining strict **CommonMark** compatibility, predictable indentation rules, and a clean hub-and-spoke project topology.
+It replaces the single-line constraints of formats like `todo.txt` while maintaining strict **CommonMark** compatibility, pure Markdown documents without YAML frontmatter friction, and predictable 4-space payload indentation rules.
 
 ---
 
 ## Table of Contents
 
 - [Features](#features)
-- [Specification Summary (SPEC-TASKMARK-03)](#specification-summary-spec-taskmark-03)
+- [Specification Summary (SPEC-TASKMARK-04)](#specification-summary-spec-taskmark-04)
   - [Directory Architecture](#directory-architecture)
-  - [Frontmatter Schema](#frontmatter-schema)
+  - [Pure CommonMark Structure](#pure-commonmark-structure)
   - [Task & Context Indentation](#task--context-indentation)
   - [todo.txt-Derived Metadata](#todotxt-derived-metadata)
   - [Task Lifecycle](#task-lifecycle)
@@ -30,64 +30,44 @@ It replaces the single-line constraints of formats like `todo.txt` while maintai
 
 ## Features
 
-- **CommonMark Compliant:** Standard markdown task lists (`- [ ]`, `- [x]`) read and written by a fixed, one-pass grammar that is itself a strict CommonMark subset — checked independently by a CommonMark reference parser in the test suite, not merely asserted.
-- **Deterministic & Machine-Readable:** Clear structure, explicit flat-frontmatter boundaries, and a fixed 4-space context payload indent eliminate parsing ambiguity for automation tools and human workflows alike.
+- **Pure CommonMark Compliant:** Standard markdown task lists (`- [ ]`, `- [x]`) read and written by a fixed, one-pass grammar that is itself a strict CommonMark subset — starting immediately at line 1 with standard headings, verified independently by a CommonMark reference parser in the test suite.
+- **Deterministic & Machine-Readable:** Clear structure, explicit block separation, and a fixed 4-space context payload indent eliminate parsing ambiguity for automation tools, AI agents, and human workflows alike.
 - **Auditable History:** Completed tasks retain a timestamp, plus a git commit hash when the task involved one (`> **Completed:** YYYY-MM-DD git:<sha>`).
-- **Automated Task Lifecycle:** `tm sweep` moves individual completed tasks from the active sheet to the archive; `tm rotate` does that and bumps the sprint; `tm archive` ages out older sections into monthly archives.
-- **Built-in Validator:** `tm validate` verifies strict spec compliance for task files.
+- **Reverse-Chronological Archive:** Newly completed work is prepended to the top of `completed.tm.md` and grouped chronologically (`## YYYY-MM`), allowing developers and AI agents to inspect the latest accomplishments without scrolling.
+- **Automated Task Lifecycle:** `tm sweep` moves individual completed tasks from the active sheet into `completed.tm.md`; `tm archive` ages out older sections into monthly archives.
+- **Built-in Validator:** `tm validate` verifies strict spec compliance for task files and provides `--fix` auto-repair (including stripping the frontmatter block from pre-0.4 files).
 - **Safe Concurrent Writes:** Every rewrite goes through a uniquely named temp file and an atomic rename, and mutating commands hold a short-lived `.tm.lock` on the task directory so concurrent runs (a human and an AI agent, say) wait for each other instead of losing updates.
 - **Dependency-Free Runtime:** The tool that reads and writes your tasks is pure, portable Lua with no runtime dependency of any kind — no C compiler, no vendored library, nothing to build to install it.
 
 ---
 
-## Specification Summary (SPEC-TASKMARK-03)
+## Specification Summary (SPEC-TASKMARK-04)
 
 Read the full specification at [`doc/taskmark_spec.md`](doc/taskmark_spec.md).
 
 ### Directory Architecture
 
-Taskmark separates global project indexing from repository-level execution:
-
-- **Hub (Global Workspace):** `~/tasks/` containing global indexes and cross-repo status.
-- **Spoke (Local Repository):** Managed inside `.tasks/` in each repository root:
+Taskmark task management is self-contained within `.tasks/` in each repository root:
 
 ```text
 [Project Repository Root]/
 └── .tasks/
     ├── active.tm.md       # Current sprint: tasks in active execution
     ├── future.tm.md       # Planned work backlog (by topic/tag)
-    ├── completed.tm.md    # Append-only archive of completed sprints
+    ├── completed.tm.md    # Reverse-chronological archive of completed work
     └── archive/           # Aged-out sections (moved automatically by `tm archive`)
         └── <YYYY>/
             └── <YYYY-MM>.tm.md
 ```
 
-### Frontmatter Schema
+### Pure CommonMark Structure
 
-Each task document begins with a flat `key: value` frontmatter block, delimited by `---`:
-
-```markdown
----
-project: taskmark
-status: Active
-sprint: 2026-S3
-date: 2026-08-27
----
-```
-
-- `project` — repository slug
-- `status` — `Active` | `Planned` | `Archive`
-- `sprint` — sprint identifier (`active.tm.md` only)
-- `date` — ISO date of last structural update
-
-### Task & Context Indentation
-
-- **Pending Task:** `^- \[ \] `
-- **Completed Task:** `^- \[x\] ` (strictly lowercase `x`)
-- **Multi-line Context Payload:** Aligned to list content with **exactly 4 spaces**.
+In SPEC-TASKMARK-04, task files start immediately on line 1 with Markdown headings or top-level content. YAML frontmatter (`---`) is eliminated from `.tm.md` files; static project configuration is maintained externally in `.taskmarkrc`.
 
 ```markdown
 # Current Sprint
+
+Bootstrap work is blocked on the vendor contract; start with the socket path.
 
 - [ ] Implement socket timeout handling
     > **Context:** Prevent hanging instances from dropped peers.
@@ -101,6 +81,13 @@ date: 2026-08-27
 - [x] Add configuration file parser
     > **Completed:** 2026-08-27 git:9bfa798
 ```
+
+### Task & Context Indentation
+
+- **Pending Task:** `^- \[ \] `
+- **Completed Task:** `^- \[x\] ` (strictly lowercase `x`)
+- **Multi-line Context Payload:** Aligned to list content with **exactly 4 spaces**.
+- **Lazy-Continuation Separation:** Top-level prose following a task payload must be separated by at least one blank line (Rule V13).
 
 ### todo.txt-Derived Metadata
 
@@ -118,13 +105,13 @@ Optional conventions adapted from `todo.txt`, layered onto the existing task/pay
    - Mark task as `- [x]`.
    - Append `> **Completed:** YYYY-MM-DD` payload at 4-space indentation, adding
      `git:<short-sha>` whenever the task involved a commit.
-3. **Sweep:** Run `tm sweep` to move completed tasks (each with its own payload) into `completed.tm.md`. Pending tasks, headings, and top-level prose stay put, even once every task beneath them is done.
-4. **Rotation:** Run `tm rotate --sprint <new-id>` at a sprint boundary — a sweep, plus a new `sprint`/`date` stamp on `active.tm.md` and a `date` stamp on `completed.tm.md`. Nothing is ever promoted out of `future.tm.md` automatically; moving planned work into the active sprint is always a deliberate edit.
-5. **Archival:** Run `tm archive` periodically to move aged-out sections to `.tasks/archive/<YYYY>/<YYYY-MM>.tm.md` — a section ages out once it is older than the 10 newest *and* its most recent `> **Completed:**` task is more than 14 days old.
+3. **Sweep:** Run `tm sweep` to move completed tasks (each with its own payload) into `completed.tm.md` in reverse chronological order under a `## YYYY-MM` heading for the month of the sweep (or `## Sprint <id>` with `--sprint <id>`). Pending tasks, headings, and top-level prose stay put.
+4. **Planning:** Nothing is ever promoted out of `future.tm.md` automatically; moving planned work into active work is always a deliberate edit.
+5. **Archival:** Run `tm archive` periodically to move aged-out sections, newest first, to `.tasks/archive/<YYYY>/<YYYY-MM>.tm.md` — a section ages out once it is older than the 2 newest *and* its most recent `> **Completed:**` task is more than 14 days old.
 
 ### Configuration
 
-All of the above paths are conventions, not hardcoded requirements. Configuration is read from two optional, flat `key: value` files — a local one for a single project and a global one for user-wide settings like the hub location — resolved per key, highest priority first: an explicit command-line option, the local file, the global file, then the built-in default (see [`doc/taskmark_spec.md` §10](doc/taskmark_spec.md#10-configuration)):
+All of the above paths are conventions, not hardcoded requirements. Configuration is read from two optional, flat `key: value` files — a local one for a single project and a global one for user-wide settings — resolved per key, highest priority first: an explicit command-line option, the local file, the global file, then the built-in default (see [`doc/taskmark_spec.md` §9](doc/taskmark_spec.md#9-configuration)):
 
 - **Local** — `.taskmarkrc` in the directory you run `tm` from.
 - **Global** — `$XDG_CONFIG_HOME/taskmark/config`, falling back to `~/.config/taskmark/config`.
@@ -150,10 +137,9 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 | Command | Description |
 |---|---|
 | `tm init` | Bootstrap taskmark folder and starter files (`active.tm.md`, `future.tm.md`, `completed.tm.md`). |
-| `tm sweep` | Move every completed task (with its payload) from `active.tm.md` to `completed.tm.md`. |
-| `tm rotate --sprint <id>` | A sweep, then bump `active.tm.md`'s `sprint`/`date` and `completed.tm.md`'s `date`. |
+| `tm sweep [--sprint <id>]` | Move every completed task (with its payload) from `active.tm.md` to `completed.tm.md`, newest first, under `## YYYY-MM` (or `## Sprint <id>`). |
 | `tm archive` | Move sections aged out of `completed.tm.md` into `archive/<YYYY>/<YYYY-MM>.tm.md`. |
-| `tm validate [file...]` | Validate task file(s) against SPEC-TASKMARK-03 (defaults to the configured active file). |
+| `tm validate [file...]` | Validate task file(s) against SPEC-TASKMARK-04 (defaults to the configured active file). |
 | `tm indent [info]` | Prefix stdin with the four-space payload indent, optionally wrapped in a fenced code block. |
 | `tm dedent [--fence]` | Remove the four-space payload indent from stdin. |
 | `tm version` | Print current version string. |
@@ -161,8 +147,8 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 
 ### Global & Command Options
 
-- `--sprint <VALUE>`: New sprint identifier to stamp on `active.tm.md`. Required with `rotate`.
-- `--dry-run`: Preview changes without modifying any files. Applies to `sweep`, `rotate`, and `archive`.
+- `--sprint <id>`: With `sweep`, bucket the swept tasks under `## Sprint <id>` instead of the current month.
+- `--dry-run`: Preview changes without modifying any files. Applies to `sweep` and `archive`.
 - `--tasks-dir <DIR>`: Path to task directory (defaults to `./.tasks`, or the `tasks_dir` set in [`.taskmarkrc`](#configuration)).
 - `-h`, `--help`: Show command-specific help.
 
@@ -187,11 +173,11 @@ tm validate .tasks/active.tm.md .tasks/future.tm.md
 # Move completed tasks into the archive
 tm sweep
 
-# Preview a sprint rotation
-tm rotate --sprint 2026-S4 --dry-run
+# Preview a sweep into a named sprint section
+tm sweep --sprint 2026-S4 --dry-run
 
-# Rotate into a new sprint
-tm rotate --sprint 2026-S4
+# Close out a sprint: sweep its completed tasks under ## Sprint 2026-S4
+tm sweep --sprint 2026-S4
 
 # Archive aged sections in a specific directory
 tm archive --tasks-dir /path/to/repo/.tasks
@@ -246,7 +232,7 @@ sudo make uninstall [PREFIX=/usr/local]
 
 ## Running Tests
 
-Run the complete test suite (metadata, scanner, validator fixtures, sweep/rotate/archive, init, config, filters, and the CommonMark conformance oracle):
+Run the complete test suite (config reader, scanner, validator fixtures, sweep/archive, init, config, filters, and the CommonMark conformance oracle):
 
 ```bash
 make test
@@ -255,7 +241,7 @@ make test
 Or run individual test runners directly:
 
 ```bash
-# Frontmatter/config reader unit tests
+# Config reader unit tests
 lua tests/tmmeta_test.lua
 
 # Line-scanner unit tests
@@ -264,7 +250,7 @@ lua tests/tmscan_test.lua
 # Validator test runner
 lua tests/test_runner.lua src/tmval.lua tests/fixtures
 
-# Sweep/rotate/archive test runner
+# Sweep/archive test runner
 lua tests/tmsweep_test.lua
 
 # Initialization test runner
@@ -295,19 +281,19 @@ lua tests/commonmark_test.lua
 ├── Makefile              # Build, test, install, and packaging targets
 ├── VERSION               # Semantic version string
 ├── doc/
-│   ├── taskmark_spec.md  # SPEC-TASKMARK-03 Specification document
+│   ├── taskmark_spec.md  # SPEC-TASKMARK-04 Specification document
 │   ├── tm.1.scd          # scdoc source for tm(1) man page
 │   └── tm.1              # Formatted roff man page
 ├── src/
 │   ├── tm                # Executable CLI entrypoint / dispatcher
-│   ├── tmmeta.lua        # Flat `key: value` frontmatter/config reader & writer
+│   ├── tmmeta.lua        # Flat `key: value` configuration reader
 │   ├── tmscan.lua        # Single-pass line scanner (headings, tasks, payloads)
 │   ├── tminit.lua        # CLI runner for the init subcommand
-│   ├── tmsweep.lua       # CLI runner for the sweep, rotate, and archive subcommands
+│   ├── tmsweep.lua       # CLI runner for the sweep and archive subcommands
 │   ├── tmsweep_core.lua  # Sweep, blank-line normalization, and archive-aging logic
 │   ├── tmfilter.lua      # indent/dedent payload filters
-│   ├── tmval.lua         # SPEC-TASKMARK-03 validation engine (rules V1-V12)
-│   └── tmconfig.lua      # .taskmarkrc / global-config / --tasks-dir path resolution (§10)
+│   ├── tmval.lua         # SPEC-TASKMARK-04 validation engine (rules V3-V13)
+│   └── tmconfig.lua      # .taskmarkrc / global-config / --tasks-dir path resolution (§9)
 ├── tests/
 │   ├── fixtures/         # Pass/fail Markdown test fixtures for the validator
 │   ├── commonmark_test.lua # CommonMark conformance oracle (the only file that loads cmark.so)

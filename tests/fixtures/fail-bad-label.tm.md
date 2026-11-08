@@ -1,7 +1,3 @@
----
-project: Bad Label
----
-
 # Tasks
 
 - [ ] A task

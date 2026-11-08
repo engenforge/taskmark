@@ -1,13 +1,13 @@
 ---
 project: Taskmark
-spec: SPEC-TASKMARK-03
+spec: SPEC-TASKMARK-04
 author: Jason Lenz, Engenforge LLC
-date: 2026-10-27
+date: 2026-11-08
 ---
 
-# Taskmark Specification (SPEC-TASKMARK-03)
+# Taskmark Specification (SPEC-TASKMARK-04)
 
-Taskmark is a deterministic, multi-line, plain-text task format designed to work with any text editor and with automated stream-parsing tools. It takes the single-line simplicity of `todo.txt` and adds an attached block of arbitrary context beneath each task. It relies on strict structural anchors — a fixed task token, a fixed payload indent, and a fixed frontmatter boundary — so that conforming tools never need to build an abstract syntax tree.
+Taskmark is a deterministic, multi-line, plain-text task format designed to work with any text editor and with automated stream-parsing tools. It takes the single-line simplicity of `todo.txt` and adds an attached block of arbitrary context beneath each task. It relies on strict structural anchors — a fixed task token, a fixed payload indent, and pure CommonMark block separation — so that conforming tools never need to build an abstract syntax tree.
 
 ## 1. Conformance and Notation
 
@@ -21,18 +21,15 @@ The key words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** ar
 
 Taskmark narrows CommonMark in two ways. It restricts which constructs may appear where — only certain block types at column 0, only one indentation width for attached content — and it assigns meaning to a few constructs CommonMark treats as ordinary text, such as the checkbox token and the `> **Key:** value` line.
 
-This subset relationship is a hard constraint on the specification, not an aspiration. A rule that would make a conforming Taskmark file render incorrectly as CommonMark, or that would require a Markdown extension to display properly, does not belong in this format.
+This subset relationship is a hard constraint on the specification, not an aspiration. A rule that would make a conforming Taskmark file render incorrectly as CommonMark, or that would require a Markdown extension to display properly, does not belong in this format. In particular, Taskmark documents are pure CommonMark without YAML frontmatter, starting immediately on line 1 with standard Markdown headings.
 
-### 1.3 Profiles
+### 1.3 Conformance Profile
 
-Two conformance profiles exist. Every rule in this specification applies to the strict profile unless a rule names the capture profile explicitly.
-
-* **Strict profile.** All repository (spoke) files: `active.tm.md`, `future.tm.md`, `completed.tm.md`, and `archive/<YYYY>/<YYYY-MM>.tm.md`. These are the documents a validator checks and the documents automation may safely rewrite.
-* **Capture profile.** The hub inbox (§3.2). Text arrives here from constrained or hurried editing environments, so frontmatter is optional and the payload indentation rule is not enforced. Everything else about the format is unchanged. Triage (§7.3) brings captured text into strict form on the way into a repository.
+All repository task files — `active.tm.md`, `future.tm.md`, `completed.tm.md`, and `archive/<YYYY>/<YYYY-MM>.tm.md` — are strict-profile pure CommonMark documents. These are the documents a validator checks and the documents automation may safely rewrite.
 
 ### 1.4 Structure vs. Convention
 
-This specification separates rules a validator enforces from conventions it does not. §§2–4 are enforceable structure. §§5–7 describe lifecycle operations and file semantics that tools implement and that a single file cannot be checked against. The priority flag (§4.3.1) and tags (§4.3.2) are optional extensions layered on the same grammar; a document that omits them entirely is fully conforming. §1.5 states exactly what a conforming validator checks.
+This specification separates rules a validator enforces from conventions it does not. §§2–4 are enforceable structure. §§5–6 describe lifecycle operations and file semantics that tools implement and that a single file cannot be checked against. The priority flag (§4.3.1) and tags (§4.3.2) are optional extensions layered on the same grammar; a document that omits them entirely is fully conforming. §1.5 states exactly what a conforming validator checks.
 
 ### 1.5 Validator Obligations
 
@@ -40,9 +37,7 @@ A conforming validator MUST reject a strict-profile document for each of the fol
 
 | # | Rule | § |
 |---|------|---|
-| V1 | Missing, unterminated, or non-first frontmatter block | 2.2 |
-| V2 | A frontmatter line outside the flat `key: value` subset | 2.2.1 |
-| V3 | A hard tab outside the content of a payload fenced code block | 2.4 |
+| V3 | A hard tab outside the content of a payload fenced code block | 2.3 |
 | V4 | A non-ATX (setext) heading | 4.2 |
 | V5 | A forbidden top-level block: fenced code, blockquote, thematic break, or raw HTML | 4.1 |
 | V6 | A top-level list item starting with '-' that is not a well-formed task token | 4.3 |
@@ -52,137 +47,60 @@ A conforming validator MUST reject a strict-profile document for each of the fol
 | V10 | A payload line beginning with '>' that does not match the labeled-field or continuation grammar | 4.4.2 |
 | V11 | Freeform payload content following a labeled field with no blank line between them | 4.4.2 |
 | V12 | A code fence opened in a payload block and not closed within it | 4.4.3 |
+| V13 | Top-level prose directly following a task line or payload line without an intervening blank line | 4.4.5 |
+| V14 | A leading frontmatter block (`---` … `---`) | 2.2 |
 
-A validator MAY emit non-fatal warnings beyond this list — an unrecognized labeled-field key, a `status` value outside the enumeration in §2.3, a malformed date — but MUST NOT fail the document for them. Field-level conventions such as tag placement (§4.3.2) and labeled-field placement (§4.4.2) are never enforced.
+A validator MAY emit non-fatal warnings beyond this list — an unrecognized labeled-field key, a malformed date — but MUST NOT fail the document for them. Field-level conventions such as tag placement (§4.3.2) and labeled-field placement (§4.4.2) are never enforced.
 
-## 2. File Format and Frontmatter
+## 2. File Format and Structure
 
 ### 2.1 File Extension
 
-Taskmark files MUST use the double extension `.tm.md` — `active.tm.md`, `completed.tm.md`, `inbox.tm.md`. The trailing `.md` guarantees that an editor without a Taskmark plugin falls back to ordinary Markdown rendering; the `.tm` segment gives a plugin a deterministic hook that costs no per-file sniffing of unrelated `.md` documents (§9).
+Taskmark files MUST use the double extension `.tm.md` — `active.tm.md`, `completed.tm.md`, `future.tm.md`. The trailing `.md` guarantees that an editor without a Taskmark plugin falls back to ordinary Markdown rendering; the `.tm` segment gives a plugin a deterministic hook that costs no per-file sniffing of unrelated `.md` documents (§8).
 
 The double extension means the POSIX basename minus one suffix is `active.tm`, not `active`. Tooling that derives display names from filenames SHOULD strip both suffixes.
 
-### 2.2 Frontmatter Block
+### 2.2 Pure CommonMark Structure
 
-Every strict-profile document MUST begin with a frontmatter block:
+Every conforming Taskmark document starts immediately on line 1 with a CommonMark heading (`#` or `##`) or top-level content.
 
-* The first line of the file MUST be exactly `---`.
-* The block MUST be terminated by a line that is exactly `---`.
-* Nothing may precede the opening `---`, not even a blank line or a byte-order mark.
-* Every line between the delimiters MUST match the flat subset defined in §2.2.1.
+* Taskmark task documents MUST NOT contain YAML or other frontmatter blocks (`---`).
+* A leading `---` delimiter parses in CommonMark as a thematic break (`<hr />`), and the `key: value` lines beneath it as a setext heading. A validator MUST report such a block — line 1 is `---`, followed by blank, `#` comment, or `key: value` lines up to a closing `---` or `...` — once, as Rule V14, rather than as the V4/V5 violations its lines would otherwise raise, so that a document written for SPEC-TASKMARK-03 or earlier gets a diagnostic that names the actual change. A repair tool MAY simply delete the block.
+* An empty file is a conforming document with no tasks.
+* Static project and directory configuration is maintained externally in `.taskmarkrc` (§9), completely decoupled from the Markdown task files.
 
-```markdown
----
-project: myproject
-status: Active
-sprint: 2026-S3
-date: 2026-07-07
----
-```
-
-The `---` delimiters are what every renderer that understands frontmatter already looks for — git forge previews, Pandoc, Hugo, Jekyll — so the block is parsed as metadata and hidden from rendered output with no renderer extension and no visual clutter.
-
-In the capture profile the block is optional; when present it MUST follow these rules.
-
-#### 2.2.1 The Flat Subset
-
-YAML as a whole is far too large to be a dependency of a format that promises determinism. Taskmark therefore defines a deliberately small subset. Every line between the delimiters MUST be:
-
-```text
-key: value
-```
-
-* `key` matches `[A-Za-z][A-Za-z0-9_-]*` and is followed by a colon and exactly one space.
-* `value` is the remainder of the line, with trailing whitespace stripped. It is read as literal text; Taskmark assigns no types. A value MAY be wrapped in matching single or double quotes, which a reader MUST strip — but quoting is not required and is conventionally omitted.
-* Forbidden within the block: nesting or indentation of any kind, sequences (`- item`), flow collections (`[…]`, `{…}`), anchors and aliases (`&`, `*`), tags (`!`), directives (`%`), block scalars (`|`, `>`), comments, blank lines, and the `...` document-end marker.
-* An unquoted value MUST NOT begin with `[`, `{`, `&`, `*`, `!`, `|`, `>`, or `%`, and MUST NOT contain a `#` preceded by whitespace. Each of those introduces a YAML construct this subset excludes, so a value needing one MUST be quoted.
-* Keys are unordered; a duplicate key is an error.
-
-The subset is small enough that reading it needs no library:
-
-```lua
-local key, value = line:match("^([%a][%w_-]*): (.*)$")
-```
-
-and large enough that a full YAML parser reads the same block to the same values. That two-way property is the point: minimal tools stay minimal, and every renderer already in the ecosystem works unmodified.
-
-This is the only metadata syntax the specification defines. Configuration (§10) uses the same subset and the same reader, so a conforming implementation needs exactly one key/value parser and no serialization dependency of any kind.
-
-### 2.3 Frontmatter Schema
-
-```text
-project: <repo-slug>
-status: Active
-sprint: YYYY-Sn
-date: YYYY-MM-DD
-```
-
-* `project` — short identifier, conventionally the repository name. Required in spoke files; omitted in hub files, which are not scoped to one repository.
-* `status` — one of `Active`, `Planned`, `Archive`, `Inbox`, `Dashboard`.
-* `sprint` — sprint identifier, present only in `active.tm.md`. It MAY name several identifiers when concurrent sprints are in flight (§6.1). `completed.tm.md` and the monthly archives hold many sprints and name none; the most recent is already the first `## Sprint …` heading in the file.
-* `date` — ISO 8601 calendar date (`YYYY-MM-DD`) on which the file was last structurally updated by a tool or by hand.
-
-Per file:
-
-| File | `project` | `status` | `sprint` | `date` |
-|------|-----------|----------|----------|--------|
-| `active.tm.md` | yes | `Active` | yes | yes |
-| `future.tm.md` | yes | `Planned` | no | yes |
-| `completed.tm.md` | yes | `Archive` | no | yes |
-| `archive/<YYYY>/<YYYY-MM>.tm.md` | yes | `Archive` | no | yes |
-| hub inbox | no | `Inbox` | no | yes |
-| hub dashboard | no | `Dashboard` | no | yes |
-
-Additional keys are permitted. A tool MUST preserve keys it does not recognize when it rewrites a file.
-
-### 2.4 Encoding, Whitespace, and Line Length
+### 2.3 Encoding, Whitespace, and Line Length
 
 * Files MUST be UTF-8 encoded and SHOULD use LF line endings.
-* **Hard tabs are forbidden**, with one exception: payload *content* inside a fenced code block (§4.4.1). A tab's width is an editor setting, so wherever whitespace carries structure — frontmatter, headings, task lines, payload prose, labeled fields, and the payload indent itself — a tab would make the document parse differently for different readers. Fence content carries no structure and is never measured, so a tab there changes nothing for any parser. Spaces remain the encouraged style everywhere, including inside fences.
+* **Hard tabs are forbidden**, with one exception: payload *content* inside a fenced code block (§4.4.1). A tab's width is an editor setting, so wherever whitespace carries structure — headings, task lines, payload prose, labeled fields, and the payload indent itself — a tab would make the document parse differently for different readers. Fence content carries no structure and is never measured, so a tab there changes nothing for any parser. Spaces remain the encouraged style everywhere, including inside fences.
 * Trailing whitespace on a line is not an error but SHOULD be stripped by tools that rewrite a file.
 * A blank line is a line containing no characters. Because tabs are forbidden and trailing whitespace is meaningless, a line of only spaces is treated as blank.
 * **There is no maximum line length and no hard-wrapping convention.** A paragraph, a task description, or a payload line is one logical line however long it runs; wrapping is a display decision belonging to the editor or viewer, not a property stored in the file. Hard-wrapped prose is not an error — a validator never inspects line length — but leaving lines unwrapped is the encouraged style, since it keeps a task line greppable in one piece and keeps diffs to the lines that actually changed.
 
-## 3. Architecture
+## 3. Architecture and Directory Layout
 
-Taskmark uses a decoupled hub-and-spoke topology. The spoke holds the authoritative task data inside the git tree. The hub is an optional adjunct for working with tasks from outside a repository — capturing an item without opening the project, or reviewing work across several projects at once. There is no bidirectional synchronization anywhere in this specification; data flows one way on each path, so no conflict-resolution logic is ever required.
-
-### 3.1 The Spoke — Local Repository
+Taskmark task management is self-contained within a dedicated directory, conventionally `.tasks/` relative to the repository root:
 
 ```text
 [Project Repository Root]/
-└── doc/
-    └── tasks/
-        ├── active.tm.md         <-- Current sprint: tasks being worked on now
-        ├── future.tm.md         <-- Planned work not yet scheduled to a sprint
-        ├── completed.tm.md      <-- Append-only archive, newest sprint first
-        └── archive/             <-- Tool-managed: sections aged out of completed (§5.5)
-            └── <YYYY>/
-                └── <YYYY-MM>.tm.md
+└── .tasks/
+    ├── active.tm.md         <-- Current sprint: tasks being worked on now
+    ├── future.tm.md         <-- Planned work not yet scheduled to a sprint
+    ├── completed.tm.md      <-- Reverse-chronological archive, newest work first
+    └── archive/             <-- Tool-managed: sections aged out of completed (§5.5)
+        └── <YYYY>/
+            └── <YYYY-MM>.tm.md
 ```
 
-`archive/` is never hand-authored. It exists only once an aging tool has moved sections out of `completed.tm.md`; a repository with no aged-out sections has no `archive/` directory at all. These paths are conventions and may be overridden (§10).
-
-### 3.2 The Hub — Cross-Repository Workspace
-
-The hub is a directory, conventionally `~/tasks/`, holding no authoritative task data. It exists so that capture and review can happen away from any single repository — from a second machine, a shared or synchronized directory, a scripted export, a text editor open somewhere else, or a device that has no checkout at all. How its contents reach those places is outside this specification; a file-level sync tool, a shared volume, and a periodic copy are all equally valid.
-
-The hub contains at most three files:
-
-* **Inbox** (`inbox.tm.md`) — append-only from the capturing side, read-and-drain from the repository side. Tasks and raw thoughts are added here whenever opening the right repository is inconvenient or impossible, and consumed by triage (§7.3). Capture profile (§1.3).
-* **Dashboard** (`dashboard.tm.md`) — generated output, read-only from the consuming side. Regenerated in full on each run (§7.2). Strict profile.
-* **Registry** (`registry.txt`) — plain text, one absolute path per line, each naming the root of a repository whose `.tasks/` should be included in the dashboard and in cross-project queries. Blank lines and lines whose first non-space character is `#` are ignored. This file is not Taskmark-formatted and is local to the machine that runs the tooling.
-
-Because the inbox is only ever appended to on one side and drained on the other, and the dashboard is only ever written on one side and read on the other, no file has two writers and the transport layer cannot produce a conflict.
+`archive/` is never hand-authored. It exists only once an aging tool has moved sections out of `completed.tm.md`; a repository with no aged-out sections has no `archive/` directory at all. These paths are conventions and may be overridden (§9).
 
 ## 4. Document Grammar
 
-A Taskmark document is a sequence of lines. Below the frontmatter, every line is classified by its own leading characters alone — no enclosing context is required to decide what a line is. This is the property that lets a conforming parser run as a single pass with at most one variable of state (§8).
+A Taskmark document is a sequence of lines. Every line is classified by its own leading characters alone — no enclosing context is required to decide what a line is. This is the property that lets a conforming parser run as a single pass with at most one variable of state (§7).
 
 ### 4.1 Top-Level Blocks
 
-A **top-level** line is one that begins at column 0. After the frontmatter, only these top-level constructs are permitted:
+A **top-level** line is one that begins at column 0. Only these top-level constructs are permitted:
 
 * ATX headings (§4.2)
 * task lines (§4.3)
@@ -197,7 +115,7 @@ At column 0, `- ` is reserved strictly for task items (§4.3); a plain dash bull
 
 ### 4.2 Headings
 
-Headings MUST use ATX form (`#`, `##`, `###`, … followed by a space). Setext headings, underlined with `===` or `---`, are forbidden: they are ambiguous with the frontmatter delimiter and they require lookahead to recognize.
+Headings MUST use ATX form (`#`, `##`, `###`, … followed by a space). Setext headings, underlined with `===` or `---`, are forbidden: they require lookahead to recognize and conflict with pure CommonMark stream parsing.
 
 Any heading level is permitted. Headings are **flat contextual markers**, not structural parents: they carry no metadata, participate in no inheritance, and never nest tasks. A parser that wants to know which heading a task falls under needs one string variable, updated on each heading line — not a tree.
 
@@ -346,9 +264,15 @@ Nested tasks are excluded because they would break the two properties this forma
 
 The practical test: **if a sub-step needs its own tags, its own priority, or its own completion hash, it has outgrown being a sub-step and should be promoted to a top-level task.**
 
+#### 4.4.5 Lazy-Continuation Boundary Enforcement
+
+Top-level prose MUST NOT directly follow a task line, or the last line of its payload block, without at least one intervening blank line (Rule V13).
+
+Under CommonMark rules, a paragraph line starting at column 0 that directly follows a paragraph inside a blockquote or list item, with no intervening blank line, is a lazy continuation line: it is absorbed into that paragraph. Directly beneath a task line it would become part of the task's summary; directly beneath a payload it would become part of the payload. Requiring a blank line before any top-level prose that follows a task guarantees that the prose always renders as an independent paragraph. The rule is deliberately stricter than CommonMark — it also covers prose that would *not* be absorbed, such as a line following a closed code fence — so that the check needs no knowledge of what the previous line's block was.
+
 ## 5. Task Lifecycle
 
-This section describes the working practices Taskmark is shaped around and the operations tooling is expected to provide. **None of it is required.** Taskmark defines a file format, not a methodology: any workflow that keeps the files conforming to §§2–4 is valid, whether or not it uses sprints, sweeps, or archives at all. A user who keeps a single `active.tm.md` by hand and never rotates anything is using Taskmark correctly.
+This section describes the working practices Taskmark is shaped around and the operations tooling is expected to provide. **None of it is required.** Taskmark defines a file format, not a methodology: any workflow that keeps the files conforming to §§2–4 is valid, whether or not it uses sprints, sweeps, or archives at all. A user who keeps a single `active.tm.md` by hand and never sweeps or archives anything is using Taskmark correctly.
 
 ### 5.1 Session Start
 
@@ -390,26 +314,29 @@ A task and its payload move as one unit; the payload's extent is defined in §4.
 
 Removing a task from the middle of a list leaves the blank lines that surrounded it behind, so a tool that rewrites a file MUST normalize blank lines outside fenced code blocks: collapse any run of consecutive blank lines to one, and drop trailing blank lines at end of file. Runs of blank lines carry no meaning in CommonMark, and without this rule repeated sweeps accumulate vertical whitespace. Blank lines *inside* a fenced code block are content and MUST be preserved exactly.
 
+Swept tasks are bucketed in `completed.tm.md` (§6.3) under a section named for the month of the sweep, `## YYYY-MM`. A tool MAY let the user name the bucket instead — `## Sprint <id>` for a project that works in sprints. The bucket records when work left the active file; each task's own `Completed` date remains the authority for when it was done, and is what archive aging uses (§5.5).
+
 Original headings are **not** copied into `completed.tm.md`. Active work is grouped topically for planning; completed work is grouped chronologically for audit. Copying topical headings into the archive would scatter fragmentary duplicates of them throughout it. A task that becomes unclear once separated from its heading is a task whose description was leaning on that heading — `+project` and `@context` tags exist to make a task self-standing.
 
 Headings and top-level prose in `active.tm.md` are never swept and are never automatically deleted, including when every task beneath them has been swept away. In keeping with the minimalist goals of the format, removing a heading left empty by a sweep is left to the user, if it is wanted at all.
 
-### 5.4 Sprint Rotation
+### 5.4 Sprint Boundaries
 
-At a sprint boundary, or whenever `active.tm.md` grows unwieldy:
+Taskmark has no rotation operation: a sprint, milestone, or other cycle is a workflow convention, not something the format records. At a boundary — or whenever `active.tm.md` grows unwieldy — a project that works in cycles typically:
 
-1. Sweep (§5.3).
-2. Update `sprint` and `date` in the `active.tm.md` frontmatter, and `date` in `completed.tm.md`.
+1. Sweeps (§5.3), optionally bucketing the swept tasks under the cycle's name (`## Sprint <id>`).
+2. Edits any cycle headings in `active.tm.md` by hand.
+3. Chooses what to bring in from `future.tm.md`.
 
-Rotation touches `active.tm.md` and `completed.tm.md` only. **`future.tm.md` is not part of rotation.** Moving a task from planned work into the active sprint is always a deliberate user decision — it is what sprint planning *is* — and no tool selects, promotes, or moves those tasks on the user's behalf. A tool MAY offer to open `future.tm.md`, or to move one named task the user has chosen, but it MUST NOT promote tasks by any automatic rule.
+**`future.tm.md` is never changed automatically.** Moving a task from planned work into active work is always a deliberate user decision — it is what planning *is* — and no tool selects, promotes, or moves those tasks on the user's behalf. A tool MAY offer to open `future.tm.md`, or to move one named task the user has chosen, but it MUST NOT promote tasks by any automatic rule.
 
-A rotated section carries no date of its own. A section's age derives from the most recent `Completed` date among its own tasks (§5.5). One date convention per task is sufficient; a section-level rotation timestamp would record only when a section happened to move, which says nothing about the work.
+A section in `completed.tm.md` carries no date of its own. Its age derives from the most recent `Completed` date among its own tasks (§5.5). One date convention per task is sufficient; a section-level timestamp would record only when a section happened to move, which says nothing about the work.
 
 ### 5.5 Archive Aging
 
-A section ages out of `completed.tm.md` when it is **both** outside the ten most recent sections **and** its most recent `Completed` date is more than fourteen days old. Both thresholds are tool defaults and MAY be configurable; the rule that age derives from the tasks' own `Completed` stamps is normative.
+A section ages out of `completed.tm.md` when it is **both** outside the two most recent sections **and** its most recent `Completed` date is more than fourteen days old. With monthly sections this keeps the current and previous month in `completed.tm.md`, so the file stays short. Both thresholds are tool defaults and MAY be configurable; the rule that age derives from the tasks' own `Completed` stamps is normative.
 
-An aged-out section is appended **verbatim** — its heading and every task and payload line unchanged — to `archive/<YYYY>/<YYYY-MM>.tm.md`, where the year and month come from that same most recent `Completed` date. Multiple sections may land in one monthly file. Archive files are append-only and are never rewritten.
+An aged-out section is moved **verbatim** — its heading and every task and payload line unchanged — into `archive/<YYYY>/<YYYY-MM>.tm.md`, where the year and month come from that same most recent `Completed` date. Multiple sections may land in one monthly file. Like `completed.tm.md`, an archive file is kept newest first: arriving sections are inserted directly beneath its title, and sections already there are carried over unchanged.
 
 ## 6. File Conventions
 
@@ -418,13 +345,6 @@ An aged-out section is appended **verbatim** — its heading and every task and 
 Normally one sprint under a single `# Current Sprint` heading. Keep the file short enough that all active work fits on one screen.
 
 ```markdown
----
-project: myproject
-status: Active
-sprint: 2026-S3
-date: 2026-07-07
----
-
 # Current Sprint
 
 Bootstrap work is blocked on the vendor contract; start with the socket path.
@@ -436,16 +356,9 @@ Bootstrap work is blocked on the vendor contract; start with the socket path.
     > **Context:** Why this matters.
 ```
 
-When concurrent sprints are in flight, separate them with H2 headings and list every identifier in the `sprint` field:
+When concurrent sprints are in flight, separate them with H2 headings:
 
 ```markdown
----
-project: myproject
-status: Active
-sprint: 2026-S3a / 2026-S3b
-date: 2026-07-07
----
-
 # Active Sprints
 
 ## Sprint Name A
@@ -459,17 +372,11 @@ date: 2026-07-07
 
 ### 6.2 `future.tm.md` — Planned Work
 
-Groups planned tasks by theme using H2 headings. The `+tag` convention (§4.3.2) maps naturally onto section names. No `sprint` field.
+Groups planned tasks by theme using H2 headings. The `+tag` convention (§4.3.2) maps naturally onto section names.
 
 Tasks leave this file only when the user moves them into `active.tm.md` (§5.4). Nothing in the format or the tooling promotes them automatically.
 
 ```markdown
----
-project: myproject
-status: Planned
-date: 2026-07-07
----
-
 # Planned Work
 
 ## Feature Area
@@ -482,94 +389,64 @@ date: 2026-07-07
 - [ ] +other Another planned task
 ```
 
-### 6.3 `completed.tm.md` — Chronological Archive
+### 6.3 `completed.tm.md` — Reverse-Chronological Archive
 
-Append-only, newest sprint first. On each sweep, insert a new H2 section immediately after the file's first heading line, so the most recent work stays at the top. Older sections are never modified.
+Both sections and tasks within each section are maintained in strict **reverse chronological order** (newest work first). On each sweep, tasks are bucketed under chronological headings (`## YYYY-MM` or `## Sprint <id>`).
+
+The **document title** is the first heading in the file when it is level 1 (e.g. `# Completed Archive`). The **top section** is the first heading beneath the title — or, in a file with no title, the first heading of all.
+
+* If the top section is the matching section, newly completed tasks are **prepended** into it, directly beneath its section heading.
+* Otherwise a new section heading is created at the top: directly beneath the title, or above the first heading when there is no title, or after any preamble prose when the file has no headings at all.
+* Older sections and tasks remain untouched below.
+
+This guarantees that developers and AI coding agents inspect the latest accomplishments immediately without reading through an arbitrarily long file.
 
 ```markdown
----
-project: myproject
-status: Archive
-date: 2026-08-30
----
-
 # Completed Archive
 
-## Sprint 2026-S3
+## 2026-11
 
 - [x] (A) +api Most recently completed task
-    > **Completed:** 2026-08-30 git:abc1234
+    > **Completed:** 2026-11-08 git:abc1234
 
-## Sprint 2026-S2
+- [x] Earlier completed task in same month
+    > **Completed:** 2026-11-02 git:789abcd
+
+## 2026-10
 
 - [x] +cli Older completed task
-    > **Completed:** 2026-07-05 git:def5678
+    > **Completed:** 2026-10-15 git:def5678
 ```
 
-The heading text `# Completed Archive` is conventional, not load-bearing (§4.2): a tool finds the insertion point as "after the first heading line", whatever it says. If a section for the current sprint already exists at the top, a sweep appends into it rather than creating a duplicate.
+The heading text `# Completed Archive` is conventional, not load-bearing (§4.2): a tool identifies the title by its position and level, whatever it says.
 
-Two branches that both sweep will conflict here, since both insert at the same anchor. The conflict is always safe to resolve by keeping both sections: the file is append-only, sections are independent, and only their order is at stake.
+Two branches that both sweep will conflict here, since both insert at the same anchor. The conflict is always safe to resolve by keeping both sides: sections and tasks are independent, and only their order is at stake.
 
 ### 6.4 `archive/<YYYY>/<YYYY-MM>.tm.md` — Aged Sections
 
-Tool-managed, never hand-authored. Sections arrive here by the aging rule in §5.5, each keeping its original heading and content verbatim. No `sprint` field — a monthly file is not scoped to one sprint.
+Tool-managed, never hand-authored. Sections arrive here by the aging rule in §5.5, each keeping its original heading and content verbatim, and are kept newest first beneath the file's title.
 
 The filename repeats the year — `archive/2026/2026-01.tm.md` — so that every archive file identifies its own period without reference to the directory holding it. A file copied, attached, or opened on its own is still unambiguous.
 
 ```markdown
----
-project: myproject
-status: Archive
-date: 2026-08-27
----
-
 # Archived Tasks — 2026-01
 
-## Sprint 2025-S12
+## 2026-01
 
 - [x] +net Task completed the prior January
     > **Completed:** 2026-01-15 git:9f1e2a3
 ```
 
-## 7. Hub Workflow
+## 7. Parsing Model
 
-The hub (§3.2) supports two operations that a single repository cannot: capturing a task from somewhere the repository is not, and reviewing work across every repository at once. Both are optional; a user who works only inside repositories never needs a hub at all.
-
-### 7.1 Capture
-
-When opening the right repository is inconvenient or impossible, append `- [ ]` lines to the inbox. No routing decision, no tags, and no payload formatting are required — the inbox is the capture profile (§1.3), and the point is that capture never blocks on getting the details right. A `+project` tag MAY be added when the destination is already obvious, to let triage pre-select it.
-
-### 7.2 Dashboard Generation
-
-The dashboard is a flattened view of pending work across repositories. For each path in the registry (§3.2), read that repository's `active.tm.md` and emit its pending tasks under a heading naming the project.
-
-Payload blocks MAY be included or omitted. Including them preserves each task's context and is often what makes the dashboard useful on its own; omitting them produces a compact list that suits a small screen or a quick scan. This is a generation option, not a property of the format — both forms are conforming Taskmark.
-
-The dashboard is derived data. It is overwritten in full on every generation and is never read back by any tool, so edits made to it do not survive and do not reach any repository. Reviewing tasks happens here; changing them happens in the repository.
-
-### 7.3 Triage
-
-Triage drains the inbox. Each captured task is appended to a chosen repository's `future.tm.md` or `active.tm.md`, brought into strict form (§1.3), and then removed from the inbox.
-
-**Triage is a user-driven operation.** Captured text arrives from hurried or constrained editing and will often be terse, misspelled, missing tags, or ambiguous as to which project it belongs to; deciding what a captured line actually means and where it belongs is exactly the judgment the capture step deferred. Tooling SHOULD present items one at a time and let the user edit the text and choose the destination. A tool MAY route an item automatically when it is unambiguous — a `+project` tag naming exactly one registered repository, for instance — but MUST fall back to asking, and MUST NOT guess a destination from partial matches.
-
-Triage is the only operation that reads the inbox and the only one that writes into a repository from the hub. Nothing is written back toward the capture side except the regenerated dashboard, so no file has two writers.
-
-## 8. Parsing Model
-
-Because frontmatter, headings, task tokens, and the payload indent are each identifiable from a line's own leading characters, a conforming reader is a single pass with one variable of state — the current heading, per §4.2. No abstract syntax tree is required.
+Because headings, task tokens, and the payload indent are each identifiable from a line's own leading characters, a conforming reader is a single pass with one variable of state — the current heading, per §4.2. No abstract syntax tree is required.
 
 ```lua
 -- Schematic Taskmark reader. One pass, one variable of state.
-local heading, in_fm, fm_done, meta = nil, false, false, {}
+local heading = nil
 
 for line in io.lines(".tasks/active.tm.md") do
-    if not fm_done and line == "---" then
-        if in_fm then fm_done = true else in_fm = true end
-    elseif in_fm then
-        local key, value = line:match("^([%a][%w_-]*): (.*)$")
-        meta[key] = value
-    elseif line:match("^#+ ") then
+    if line:match("^#+ ") then
         heading = line:match("^#+ (.*)")
     elseif line:match("^%- %[[ x]%] ") then
         print("TASK", heading, line)
@@ -582,28 +459,27 @@ end
 
 A tool that only needs the task lines can skip the heading variable entirely and match `^- \[[ x]\] ` with `grep`, `sed`, or `awk`.
 
-## 9. Editor Integration
+## 8. Editor Integration
 
 Taskmark's grammar is fixed enough that syntax highlighting, folding, and completion can be implemented with regex-based rules or a small Tree-sitter grammar. No language server is needed, and none should be built.
 
 A conforming editor integration SHOULD name its filetype `taskmark` and SHOULD activate on any of the following:
 
 1. **Extension glob** — `*.tm.md`. This is the primary trigger (§2.1).
-2. **Path glob** — files inside a configured tasks directory, `*/.tasks/*` by default (§10), which catches a project that has renamed its task files.
-3. **Content signature** — a first line of exactly `---` followed within the block by a `project:` or `status:` line. A plugin may read the first few lines of a buffer and set the filetype from this alone.
+2. **Path glob** — files inside a configured tasks directory, `*/.tasks/*` by default (§9), which catches a project that has renamed its task files.
 
-### 9.1 Authoring Aids
+### 8.1 Authoring Aids
 
 Most of the friction in writing Taskmark by hand comes from defaults an editor applies to ordinary Markdown. An integration SHOULD, for filetype `taskmark`:
 
 * **Continue a task into its payload at four spaces.** No editor's default list continuation produces this, and it is needed on every payload line, which makes it the single highest-value thing a plugin can do.
-* **Disable automatic hard wrapping.** Taskmark has no line-length limit (§2.4), and an editor that wraps a long `> **Key:** value` line silently produces an invalid document (§4.4.2) from a setting the user has forgotten is on.
+* **Disable automatic hard wrapping.** Taskmark has no line-length limit (§2.3), and an editor that wraps a long `> **Key:** value` line silently produces an invalid document (§4.4.2) from a setting the user has forgotten is on.
 * **Expand tabs on insert outside fenced code blocks**, and leave fence content untouched (§4.4.3).
 * **Fold payload blocks and completed sections**, both of which are identifiable from indentation and the task token alone.
 
 Moving material in and out of a payload — a stack trace, a diff, a block of source — is the one case an editor cannot help with generically, since the text carries its own indentation and must gain or shed the payload prefix without losing it. A tool SHOULD therefore provide a **payload indent filter and its inverse**, both plain stdin-to-stdout filters:
 
-* **Indent** prefixes every non-blank line with the four-space payload indent and emits blank lines as genuinely empty, so no line is left holding four spaces of trailing whitespace (§2.4). It changes nothing else. It MAY wrap the result in a fence with a given info string.
+* **Indent** prefixes every non-blank line with the four-space payload indent and emits blank lines as genuinely empty, so no line is left holding four spaces of trailing whitespace (§2.3). It changes nothing else. It MAY wrap the result in a fence with a given info string.
 * **Dedent** removes exactly four leading spaces from each line and changes nothing else. It MUST fail rather than truncate when a non-blank line does not carry the full four-space prefix — that is the case where the selection has picked up a task line or top-level prose, and silently eating characters from it is the one way this operation can destroy data. It MAY additionally drop the opening and closing fence markers, which is usually what is wanted when lifting a code block back out to a file or a compiler.
 
 The two MUST round-trip: dedent after indent returns the input byte for byte, for any input whatsoever. That is what gives §4.4.3's verbatim guarantee something to stand on. Whitespace-sensitive material — Makefile recipes, tab-indented Go, a diff whose leading spaces are significant — goes into a payload and comes back out unchanged, rather than being merely *stored* faithfully and then mangled on the way out.
@@ -612,9 +488,7 @@ The two MUST round-trip: dedent after indent returns the input byte for byte, fo
 
 Keeping these as filters rather than editor features is what makes them universal: they compose with the shell (`tm indent < trace.txt`, `xclip -o | tm indent`, `tm dedent > patch.diff`) and, more usefully, with any editor that can pipe a region through an external command, which covers essentially all of them. No plugin is required to get the behavior, and neither filter needs a parser or any state.
 
-The indent filter is also the normalization step triage performs (§7.3) when it moves captured text into a repository; the two are the same operation.
-
-### 9.2 Modelines
+### 8.2 Modelines
 
 For a file opened outside any of the triggers above, a standard modeline in a trailing HTML comment forces the filetype explicitly and is invisible in rendered Markdown:
 
@@ -622,18 +496,18 @@ For a file opened outside any of the triggers above, a standard modeline in a tr
 <!-- vim: set ft=taskmark : -->
 ```
 
-An editor with no Taskmark plugin renders every one of these files as ordinary Markdown with a hidden frontmatter block and interactive checkboxes. Nothing about the format depends on tooling being installed.
+An editor with no Taskmark plugin renders every one of these files as ordinary Markdown with interactive checkboxes. Nothing about the format depends on tooling being installed.
 
-## 10. Configuration
+## 9. Configuration
 
-By default a Taskmark tool operates entirely on the conventional paths above; no configuration file is required and initialization never creates one. Configuration exists so a project or a user can move those paths, and it does nothing else (§10.3).
+By default a Taskmark tool operates entirely on the conventional paths above; no configuration file is required and initialization never creates one. Configuration exists so a project or a user can move those paths, and it does nothing else (§9.3).
 
-### 10.1 Files
+### 9.1 Files
 
-Configuration uses the **same flat `key: value` subset as frontmatter** (§2.2.1), so an implementation parses it with the reader it already has. The same schema is read from two locations:
+Configuration uses a flat `key: value` subset, read from two locations:
 
-* **Global** — `$XDG_CONFIG_HOME/taskmark/config`, defaulting to `~/.config/taskmark/config` when `XDG_CONFIG_HOME` is unset. Settings belonging to the user rather than to any one repository, such as the hub location.
-* **Local** — `.taskmarkrc` in the directory the tool is invoked from. Settings belonging to one project.
+* **Global** — `$XDG_CONFIG_HOME/taskmark/config`, defaulting to `~/.config/taskmark/config` when `XDG_CONFIG_HOME` is unset.
+* **Local** — `.taskmarkrc` in the directory the tool is invoked from.
 
 ```text
 # paths for this project
@@ -642,20 +516,13 @@ active_file: active.tm.md
 future_file: future.tm.md
 completed_file: completed.tm.md
 archive_dir: archive
-
-hub_dir: ~/tasks
-inbox_file: inbox.tm.md
-dashboard_file: dashboard.tm.md
-registry_file: registry.txt
 ```
 
-Two relaxations apply here and not in frontmatter, matching the rule already used for the registry (§3.2): **blank lines and comment lines** — those whose first non-space character is `#` — are ignored. A configuration file is hand-edited far more often than frontmatter, and being able to note why a path was overridden is worth two lines in a reader. Every other rule of §2.2.1 holds unchanged, including that values are read as literal text.
-
-Every value is a scalar, and that is a deliberate limit rather than an omission: configuration never grows nested structure. Where a setting is genuinely a list, it lives in its own line-oriented file that the configuration merely points at — `registry_file` is the existing example.
+Blank lines and comment lines — those whose first non-space character is `#` — are ignored. Every value is a literal scalar string.
 
 All keys are optional in both files. An absent key, an absent file, or a line a reader cannot parse falls back silently to the next source below, so a project with no configuration behaves exactly as one with an empty file.
 
-### 10.2 Resolution Order
+### 9.2 Resolution Order
 
 Resolution is **per key**, not per file: a local file that sets only `tasks_dir` leaves every other key to the global file and the built-in defaults. For each path a tool needs, highest priority first:
 
@@ -666,12 +533,10 @@ Resolution is **per key**, not per file: a local file that sets only `tasks_dir`
 
 **Legacy task directory.** Before SPEC-TASKMARK-04 the default `tasks_dir` was `doc/tasks`. When no source above sets `tasks_dir`, `.tasks/` does not exist, and `doc/tasks/` does, a tool SHOULD resolve `tasks_dir` to `doc/tasks` so that an existing project keeps working unconfigured. Once `.tasks/` exists, or `tasks_dir` is set anywhere, the fallback never applies.
 
-### 10.3 Scope
+### 9.3 Scope
 
 Configuration controls *where* a tool reads and writes the files this specification defines. It does not change file contents, task grammar, or any other rule in this document. `archive_dir` renames only the top-level folder; the `<YYYY>/<YYYY-MM>.tm.md` layout beneath it is fixed.
 
-## 11. Isolation and Portability
+## 10. Isolation and Portability
 
 Task data lives inside `.tasks/` relative to the repository root, so it travels with the repository through clones, containers, and sandboxes with no external path hierarchy, no global data store, and no network service. A project's tasks are as private as its source, and history for both is the same history.
-
-The hub does not weaken this. It stores no authoritative data, and the dashboard is derived output that can be regenerated or deleted at any time without loss.

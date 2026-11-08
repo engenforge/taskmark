@@ -1,9 +1,3 @@
----
-project: MultiLine
-status: Active
-date: 2026-10-27
----
-
 # Tasks
 
 - [ ] A task with multi-line labeled fields

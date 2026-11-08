@@ -1,7 +1,3 @@
----
-project: Fenced Payload
----
-
 # Tasks
 
 - [ ] Task with code

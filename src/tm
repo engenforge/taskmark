@@ -1,10 +1,9 @@
 #!/usr/bin/env lua
--- tm — universal taskmark utility (SPEC-TASKMARK-03)
+-- tm — universal taskmark utility (SPEC-TASKMARK-04)
 --
 -- Dispatches subcommands to the taskmark modules in this repository:
 --   tm init       Bootstrap a project's .tasks/ directory with starter files
 --   tm sweep      Move completed tasks from active.tm.md into completed.tm.md
---   tm rotate     A sweep, then bump active.tm.md's sprint/date frontmatter
 --   tm archive    Archive aged-out sections from completed.tm.md into archive/
 --   tm validate   Validate taskmark file(s) for spec compliance
 --   tm indent     Prefix stdin with the four-space payload indent
@@ -56,7 +55,7 @@ end
 local VERSION = read_version()
 
 local USAGE = [[
-tm — universal taskmark utility (SPEC-TASKMARK-03)
+tm — universal taskmark utility (SPEC-TASKMARK-04)
 
 Usage:
   tm <command> [options]
@@ -65,11 +64,10 @@ Commands:
   init       Bootstrap .tasks/ with starter active.tm.md/future.tm.md/
              completed.tm.md files
   sweep      Move every completed task from active.tm.md into completed.tm.md
-  rotate     A sweep, then bump active.tm.md's sprint/date frontmatter
-             (requires --sprint VALUE) and completed.tm.md's date
+             (newest first; --sprint LABEL buckets under ## Sprint LABEL)
   archive    Archive sections aged out of completed.tm.md into
              archive/<YYYY>/<YYYY-MM>.tm.md
-  validate   Validate taskmark file(s) for SPEC-TASKMARK-03 compliance
+  validate   Validate taskmark file(s) for SPEC-TASKMARK-04 compliance
   indent     Prefix stdin with the four-space payload indent
   dedent     Remove the four-space payload indent from stdin
   help       Show this help
@@ -107,7 +105,8 @@ elseif cmd == "init" then
 elseif cmd == "sweep" then
     require("tmsweep").run({ "--sweep", table.unpack(rest) })
 elseif cmd == "rotate" then
-    require("tmsweep").run({ "--rotate", table.unpack(rest) })
+    fail("tm rotate was removed in SPEC-TASKMARK-04: use 'tm sweep' " ..
+         "(add --sprint LABEL to bucket under ## Sprint LABEL).")
 elseif cmd == "archive" then
     require("tmsweep").run({ "--archive", table.unpack(rest) })
 elseif cmd == "validate" then

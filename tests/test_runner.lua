@@ -9,26 +9,26 @@ local passed = 0
 local failed = 0
 local results = {}
 
--- SPEC-TASKMARK-03 §1.5 rule each fail-* fixture is expected to trip. tmval
+-- SPEC-TASKMARK-04 §1.5 rule each fail-* fixture is expected to trip. tmval
 -- reports each violation as "Line N: V<n>: <message>", so matching the rule
 -- code is sufficient and doesn't couple this table to exact wording.
 local expected_diagnostics = {
     ["fail-bad-label.tm.md"] = "V10:",
     ["fail-bad-task-token.tm.md"] = "V6:",
-    ["fail-empty.tm.md"] = "V1:",
     ["fail-label-no-blank.tm.md"] = "V11:",
     ["fail-mixed-indent.tm.md"] = "V7:",
     ["fail-nested-task.tm.md"] = "V9:",
     ["fail-nested-task-indent.tm.md"] = "V7:",
-    ["fail-no-frontmatter.tm.md"] = "V1:",
     ["fail-setext-header.tm.md"] = "V4:",
     ["fail-tab-indent.tm.md"] = "V3:",
     ["fail-toplevel-blockquote.tm.md"] = "V5:",
     ["fail-toplevel-fence.tm.md"] = "V5:",
     ["fail-toplevel-html.tm.md"] = "V5:",
     ["fail-toplevel-thematic-break.tm.md"] = "V5:",
-    ["fail-unclosed-frontmatter.tm.md"] = "V1:",
     ["fail-unclosed-payload-fence.tm.md"] = "V12:",
+    ["fail-v13-lazy-continuation.tm.md"] = "V13:",
+    ["fail-v13-prose-after-task.tm.md"] = "V13:",
+    ["fail-v14-frontmatter.tm.md"] = "V14:",
     ["fail-wrong-indent.tm.md"] = "V7:",
 }
 
@@ -196,8 +196,8 @@ do
     local out, code = run_val(string.format("%s/pass-blank-lines.tm.md %s/pass-valid-basic.tm.md", fixtures_dir, fixtures_dir))
     test_cli("multi-file: multiple valid files exit 0", code == 0, "expected exit 0, got " .. code)
     test_cli("multi-file: multiple valid files all reported PASS",
-        out:find("pass-blank-lines.tm.md conforms to SPEC-TASKMARK-03", 1, true) ~= nil and
-        out:find("pass-valid-basic.tm.md conforms to SPEC-TASKMARK-03", 1, true) ~= nil)
+        out:find("pass-blank-lines.tm.md conforms to SPEC-TASKMARK-04", 1, true) ~= nil and
+        out:find("pass-valid-basic.tm.md conforms to SPEC-TASKMARK-04", 1, true) ~= nil)
 end
 
 do
@@ -210,10 +210,10 @@ do
 end
 
 do
-    local out, code = run_val(string.format("%s/fail-bad-label.tm.md %s/fail-empty.tm.md", fixtures_dir, fixtures_dir))
+    local out, code = run_val(string.format("%s/fail-bad-label.tm.md %s/fail-bad-task-token.tm.md", fixtures_dir, fixtures_dir))
     test_cli("multi-file: two failing files exit 1", code == 1, "expected exit 1, got " .. code)
     test_cli("multi-file: both failing files reported with filename prefix",
-        out:find("fail-bad-label.tm.md: Line", 1, true) ~= nil and out:find("fail-empty.tm.md: Line", 1, true) ~= nil)
+        out:find("fail-bad-label.tm.md: Line", 1, true) ~= nil and out:find("fail-bad-task-token.tm.md: Line", 1, true) ~= nil)
     test_cli("multi-file: failure count is accumulated", out:find("Validation failed with 2 error(s).", 1, true) ~= nil)
 end
 
@@ -257,17 +257,10 @@ do
     -- 1. --fix on already passing file
     local out_pass, code_pass = run_val(string.format("--fix %s/pass-valid-basic.tm.md", fixtures_dir))
     test_cli("--fix: passing file exits 0", code_pass == 0)
-    test_cli("--fix: passing file reports conforms", out_pass:find("conforms to SPEC-TASKMARK-03", 1, true) ~= nil)
+    test_cli("--fix: passing file reports conforms", out_pass:find("conforms to SPEC-TASKMARK-04", 1, true) ~= nil)
 
     -- 2. --fix on fixable file with V8, V10, V11, and V6
-    local bad_content = [[---
-project: fixme
-status: Active
-sprint: 2026-S1
-date: 2026-10-01
----
-
-# Preamble
+    local bad_content = [[# Preamble
 
 - Top-level bullet item
 
@@ -301,7 +294,7 @@ date: 2026-10-01
     test_cli("--fix: does not use unicode bullet", fixed_file_content:find("•") == nil)
 
     -- 3. --fix on unfixable file exits 1
-    local out_unfix, code_unfix = run_val(string.format("--fix %s/fail-empty.tm.md", fixtures_dir))
+    local out_unfix, code_unfix = run_val(string.format("--fix %s/fail-unclosed-payload-fence.tm.md", fixtures_dir))
     test_cli("--fix: unfixable file exits 1", code_unfix == 1)
     test_cli("--fix: unfixable file reports [FAIL]", out_unfix:find("%[FAIL%]") ~= nil)
 
@@ -331,17 +324,47 @@ date: 2026-10-01
     os.execute("rm -rf '" .. crlf_dir .. "'")
 end
 
+-- V13 / V14 diagnostics and --fix repairs
+do
+    local dir = os.tmpname()
+    os.remove(dir)
+    os.execute("mkdir -p '" .. dir .. "'")
+    local function write(name, body)
+        local f = io.open(dir .. "/" .. name, "w")
+        f:write(body)
+        f:close()
+        return dir .. "/" .. name
+    end
+    local function read(path)
+        local f = io.open(path, "r")
+        local b = f:read("*a")
+        f:close()
+        return b
+    end
+
+    -- A pre-0.4 frontmatter block is reported once, as V14, without the
+    -- misleading V4/V5 errors its `---` and `key: value` lines would raise.
+    local out = run_val(fixtures_dir .. "/fail-v14-frontmatter.tm.md")
+    test_cli("V14: frontmatter reported as V14", out:find("V14:", 1, true) ~= nil, out)
+    test_cli("V14: no spurious V4/V5 for the frontmatter lines",
+        out:find("V4:", 1, true) == nil and out:find("V5:", 1, true) == nil, out)
+
+    local fm = write("fm.tm.md", "---\ntaskmark: 0.3\nrole: active\n---\n\n# Current Sprint\n\n- [ ] Kept\n")
+    local _, code = run_val("--fix " .. fm)
+    test_cli("V14: --fix strips the frontmatter block", code == 0 and read(fm) == "# Current Sprint\n\n- [ ] Kept\n", read(fm))
+
+    local v13 = write("v13.tm.md", "# A\n\n- [ ] One\n    > **Note:** x\nAfter payload\n\n- [ ] Two\nAfter task\n")
+    _, code = run_val("--fix " .. v13)
+    test_cli("V13: --fix separates prose from a payload and from a task line",
+        code == 0 and read(v13) == "# A\n\n- [ ] One\n    > **Note:** x\n\nAfter payload\n\n- [ ] Two\n\nAfter task\n", read(v13))
+
+    os.execute("rm -rf '" .. dir .. "'")
+end
+
 -- Tests for top-level prose lists (*, +, 1.) and unicode bullet conversion
 do
     local tmp_prose = "/tmp/tm_cli_prose_test.tm.md"
-    local valid_prose_lists = [[---
-project: prose-lists
-status: Active
-sprint: 2026-S1
-date: 2026-10-01
----
-
-# Preamble
+    local valid_prose_lists = [[# Preamble
 
 * Asterisk bullet
 + Plus bullet
@@ -358,14 +381,7 @@ date: 2026-10-01
     os.remove(tmp_prose)
 
     local tmp_uni = "/tmp/tm_cli_uni_test.tm.md"
-    local unicode_bullet_content = [[---
-project: unifix
-status: Active
-sprint: 2026-S1
-date: 2026-10-01
----
-
-# Preamble
+    local unicode_bullet_content = [[# Preamble
 
 - Loose bullet
 • Old unicode bullet
@@ -382,19 +398,12 @@ date: 2026-10-01
     os.remove(tmp_uni)
 end
 
--- SPEC-TASKMARK-03 Tests: Multi-line labeled fields (V10) and Payload sub-lists / continuation indents (V8)
+-- SPEC-TASKMARK-04 Tests: Multi-line labeled fields (V10) and Payload sub-lists / continuation indents (V8)
 do
     local tmp_spec03 = "/tmp/tm_cli_spec03_test.tm.md"
 
     -- 1. Valid multi-line labeled field passes validation
-    local valid_multiline_label = [[---
-project: spec03-label
-status: Active
-sprint: 2026-S1
-date: 2026-10-01
----
-
-# Tasks
+    local valid_multiline_label = [[# Tasks
 
 - [ ] (A) Task with multi-line labeled field
     > **Context:** First line of context.
@@ -407,17 +416,10 @@ date: 2026-10-01
     f1:write(valid_multiline_label)
     f1:close()
     local out1, code1 = run_val(tmp_spec03)
-    test_cli("SPEC-TASKMARK-03: multi-line labeled field passes validation", code1 == 0)
+    test_cli("SPEC-TASKMARK-04: multi-line labeled field passes validation", code1 == 0)
 
     -- 2. Valid payload sub-list and hanging continuation line passes validation
-    local valid_payload_sublist = [[---
-project: spec03-sublist
-status: Active
-sprint: 2026-S1
-date: 2026-10-01
----
-
-# Tasks
+    local valid_payload_sublist = [[# Tasks
 
 - [ ] (A) Task with sub-lists
     > **Context:** Single line context.
@@ -433,17 +435,10 @@ date: 2026-10-01
     f2:write(valid_payload_sublist)
     f2:close()
     local out2, code2 = run_val(tmp_spec03)
-    test_cli("SPEC-TASKMARK-03: payload sub-lists and continuation indents pass validation", code2 == 0)
+    test_cli("SPEC-TASKMARK-04: payload sub-lists and continuation indents pass validation", code2 == 0)
 
     -- 3. Forbidden: 6+ spaces after a blank line outside code fence still fails Rule V8
-    local bad_blank_indent = [[---
-project: spec03-bad-indent
-status: Active
-sprint: 2026-S1
-date: 2026-10-01
----
-
-# Tasks
+    local bad_blank_indent = [[# Tasks
 
 - [ ] (A) Task with bad indent
     > **Context:** Some context.
@@ -454,17 +449,10 @@ date: 2026-10-01
     f3:write(bad_blank_indent)
     f3:close()
     local out3, code3 = run_val(tmp_spec03)
-    test_cli("SPEC-TASKMARK-03: 6+ spaces after blank line fails Rule V8", code3 == 1 and out3:find("V8:", 1, true) ~= nil)
+    test_cli("SPEC-TASKMARK-04: 6+ spaces after blank line fails Rule V8", code3 == 1 and out3:find("V8:", 1, true) ~= nil)
 
     -- 4. Forbidden: excessive indentation past column 8 (content indent > 4) still fails Rule V8
-    local bad_excess_indent = [[---
-project: spec03-excess-indent
-status: Active
-sprint: 2026-S1
-date: 2026-10-01
----
-
-# Tasks
+    local bad_excess_indent = [[# Tasks
 
 - [ ] (A) Task with excess indent
     - Bullet item
@@ -474,17 +462,10 @@ date: 2026-10-01
     f4:write(bad_excess_indent)
     f4:close()
     local out4, code4 = run_val(tmp_spec03)
-    test_cli("SPEC-TASKMARK-03: >4 spaces content indent fails Rule V8", code4 == 1 and out4:find("V8:", 1, true) ~= nil)
+    test_cli("SPEC-TASKMARK-04: >4 spaces content indent fails Rule V8", code4 == 1 and out4:find("V8:", 1, true) ~= nil)
 
     -- 5. --fix preserves multi-line labeled fields and sub-lists
-    local fix_preserves = [[---
-project: spec03-fix
-status: Active
-sprint: 2026-S1
-date: 2026-10-01
----
-
-# Tasks
+    local fix_preserves = [[# Tasks
 
 - Top-level loose bullet
 
@@ -499,10 +480,10 @@ date: 2026-10-01
     f5:write(fix_preserves)
     f5:close()
     local out5, code5 = run_val("--fix " .. tmp_spec03)
-    test_cli("SPEC-TASKMARK-03: --fix succeeds on fixture", code5 == 0)
+    test_cli("SPEC-TASKMARK-04: --fix succeeds on fixture", code5 == 0)
     local fixed_content = io.open(tmp_spec03, "r"):read("*a")
-    test_cli("SPEC-TASKMARK-03: --fix preserves multi-line labeled field", fixed_content:find("    > Second continuation line%.") ~= nil)
-    test_cli("SPEC-TASKMARK-03: --fix preserves sub-bullet indent", fixed_content:find("      %- Nested bullet") ~= nil)
+    test_cli("SPEC-TASKMARK-04: --fix preserves multi-line labeled field", fixed_content:find("    > Second continuation line%.") ~= nil)
+    test_cli("SPEC-TASKMARK-04: --fix preserves sub-bullet indent", fixed_content:find("      %- Nested bullet") ~= nil)
 
     os.remove(tmp_spec03)
 end
