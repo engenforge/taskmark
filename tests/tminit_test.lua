@@ -265,9 +265,8 @@ do
     local gitignore = read_file(git_dir .. "/.gitignore") or ""
     check("orphan_init", ".gitignore contains /.tasks/", gitignore:match("/%.tasks/") ~= nil)
 
-    check("orphan_init", ".taskmarkrc created/updated", read_file(git_dir .. "/.taskmarkrc") ~= nil)
-    local taskmarkrc = read_file(git_dir .. "/.taskmarkrc") or ""
-    check("orphan_init", ".taskmarkrc sets tasks_dir: .tasks", taskmarkrc:match("tasks_dir:%s*%.tasks") ~= nil)
+    -- .tasks is the default directory, so there is nothing to configure.
+    check("orphan_init", "default .tasks: no .taskmarkrc is created", read_file(git_dir .. "/.taskmarkrc") == nil)
 
     -- Worktree check
     local worktree_branch, _ = run_cmd(string.format("cd %s/.tasks && git branch --show-current", git_dir))
@@ -400,8 +399,24 @@ do
     local out, code = run_cmd(string.format("cd %s && %s init --orphan", dir, abs_tm))
     check("orphan_hooks", "initial tasks commit runs the pre-commit hook",
         code == 0 and (read_file(dir .. "/hook.log") or ""):find("HOOK-RAN", 1, true) ~= nil, out)
-    check("orphan_notice", "reports .gitignore and .taskmarkrc as needing a commit",
-        out:find(".gitignore", 1, true) ~= nil and out:find(".taskmarkrc", 1, true) ~= nil and out:find("commit", 1, true) ~= nil, out)
+    check("orphan_notice", "reports only .gitignore as needing a commit (default dir)",
+        out:find(".gitignore", 1, true) ~= nil and out:find(".taskmarkrc", 1, true) == nil and out:find("commit", 1, true) ~= nil, out)
+    os.execute("rm -rf " .. dir)
+end
+
+do
+    -- A non-default directory is the case .taskmarkrc exists for: it records
+    -- the choice so every later tm run from the root finds the worktree.
+    local dir = code_repo("tminit_custom_dir")
+    local out, code = run_cmd(string.format("cd %s && %s init --orphan --tasks-dir work/items", dir, abs_tm))
+    check("orphan_custom_dir", "init --orphan --tasks-dir work/items exits 0", code == 0, out)
+    check("orphan_custom_dir", ".taskmarkrc records tasks_dir: work/items",
+        (read_file(dir .. "/.taskmarkrc") or ""):match("tasks_dir:%s*work/items") ~= nil)
+    check("orphan_custom_dir", "reports .gitignore and .taskmarkrc as needing a commit",
+        out:find(".gitignore", 1, true) ~= nil and out:find(".taskmarkrc", 1, true) ~= nil, out)
+    local listing, lcode = run_cmd(string.format("cd %s && %s list --all", dir, abs_tm))
+    check("orphan_custom_dir", "later tm commands find the directory via .taskmarkrc",
+        lcode == 0 and not listing:find("not found", 1, true), listing)
     os.execute("rm -rf " .. dir)
 end
 

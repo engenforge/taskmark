@@ -556,12 +556,12 @@ Setting it up once, from the repository root (the reference CLI's `tm init --orp
 
 ```shell
 echo "/.tasks/" >> .gitignore            # 1. hide the mount from the code branch
-echo "tasks_dir: .tasks" >> .taskmarkrc  # 2. name the task directory
+# 2. (only for a directory other than .tasks: echo "tasks_dir: DIR" >> .taskmarkrc)
 git worktree add --orphan -b tasks .tasks   # 3. mount a new orphan branch (git >= 2.42)
 # ...create the task files, then commit and publish the branch:
 git -C .tasks add -A && git -C .tasks commit -m "Initialize task branch"
 git -C .tasks push -u origin tasks
-git add .gitignore .taskmarkrc && git commit -m "Track tasks on the tasks branch"
+git add .gitignore && git commit -m "Track tasks on the tasks branch"
 ```
 
 A worktree is local to one clone; cloning the repository fetches the `tasks` branch but does not mount it. Each collaborator mounts the *existing* branch, so that everyone shares one task history:

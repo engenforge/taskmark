@@ -171,7 +171,7 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 - `--to <FILE>`: With `move`, destination file (default: `active.tm.md`).
 - `--sprint <id>`: With `sweep`, bucket the swept tasks under `## Sprint <id>` instead of the current month.
 - `--dry-run`: Preview changes without modifying any files. Applies to `sweep` and `archive`.
-- `--orphan [BRANCH]`: With `init`, initialize an isolated orphan Git branch (default: `tasks`), configure `.gitignore` and `.taskmarkrc`, and mount `.tasks/` as a worktree.
+- `--orphan [BRANCH]`: With `init`, initialize an isolated orphan Git branch (default: `tasks`), add the directory to `.gitignore` (and record a non-default directory in `.taskmarkrc`), and mount it as a worktree.
 - `-m, --message <MSG>`: With `sync`, commit message for the orphan branch commit.
 - `-p, --push`: With `sync`, push after committing; the first push sets the upstream (to `origin`, or the only remote).
 - `--tasks-dir <DIR>`: Path to task directory (defaults to `./.tasks`, or the `tasks_dir` set in [`.taskmarkrc`](#configuration)).

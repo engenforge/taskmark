@@ -21,8 +21,8 @@ Options:
   --orphan [BRANCH] From the repository root: mount BRANCH (default: tasks)
                    at the tasks directory as a git worktree -- an existing
                    local or fetched remote branch if there is one, else a
-                   new orphan branch -- add the directory to .gitignore,
-                   and set tasks_dir in .taskmarkrc
+                   new orphan branch -- add the directory to .gitignore
+                   (and, if it is not .tasks, set tasks_dir in .taskmarkrc)
   --tasks-dir DIR  Directory to scaffold (default: .tasks, or the
                    tasks_dir set in .taskmarkrc -- see SPEC-TASKMARK-04 §9)
   -h, --help       Show this help
@@ -176,8 +176,12 @@ local function init_orphan(cfg, branch)
     local changed = {}
     local c, e = ensure_line(".gitignore", "/" .. dir .. "/", ignores_dir(dir))
     if c == nil then die(e) elseif c then changed[#changed + 1] = ".gitignore" end
-    c, e = ensure_line(".taskmarkrc", "tasks_dir: " .. dir, function(l) return l:match("^%s*tasks_dir%s*:") ~= nil end)
-    if c == nil then die(e) elseif c then changed[#changed + 1] = ".taskmarkrc" end
+    -- .taskmarkrc only records a directory other than the default: tm finds
+    -- ".tasks" without it.
+    if dir ~= tmconfig.DEFAULTS.tasks_dir then
+        c, e = ensure_line(".taskmarkrc", "tasks_dir: " .. dir, function(l) return l:match("^%s*tasks_dir%s*:") ~= nil end)
+        if c == nil then die(e) elseif c then changed[#changed + 1] = ".taskmarkrc" end
+    end
 
     -- The worktree's own .gitignore keeps tm's transient lock out of commits.
     if not tmio.file_exists(dir .. "/.gitignore") then

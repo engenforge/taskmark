@@ -156,13 +156,15 @@ the current working directory (the layout described by the spec).
 *--orphan* [_BRANCH_]
 	With *init*, run from the repository root: mount branch _BRANCH_
 	(default _tasks_) at the tasks directory as a git worktree, add the
-	directory to _.gitignore_, and set *tasks_dir* in _.taskmarkrc_. An
-	existing local branch is mounted as is; a branch already fetched from a
-	remote is checked out tracking it, so a collaborator joins the shared
+	directory to _.gitignore_ (and, when it is not _.tasks_, set *tasks_dir* in
+	_.taskmarkrc_). An existing local branch is mounted as is; a branch
+	already fetched from a remote is checked out tracking it, so a
+	collaborator joins the shared
 	task history; otherwise a new orphan branch is created with only the
 	starter files, committed with hooks running. Works with any git that has
 	*git worktree*. Refuses an existing directory that is not a worktree.
-	The changed _.gitignore_ and _.taskmarkrc_ are left for you to commit.
+	The changed _.gitignore_ (and _.taskmarkrc_, if written) are left for you to
+	commit.
 
 *-m*, *--message* _MSG_
 	With *sync*: commit message, passed to git verbatim.

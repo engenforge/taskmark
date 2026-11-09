@@ -212,13 +212,15 @@ Directory holding the task files.\& Defaults to \fI.\&/.\&tasks\fR, or the
 .RS 4
 With \fBinit\fR, run from the repository root: mount branch \fIBRANCH\fR
 (default \fItasks\fR) at the tasks directory as a git worktree, add the
-directory to \fI.\&gitignore\fR, and set \fBtasks_dir\fR in \fI.\&taskmarkrc\fR.\& An
-existing local branch is mounted as is; a branch already fetched from a
-remote is checked out tracking it, so a collaborator joins the shared
+directory to \fI.\&gitignore\fR (and, when it is not \fI.\&tasks\fR, set \fBtasks_dir\fR in
+\fI.\&taskmarkrc\fR).\& An existing local branch is mounted as is; a branch
+already fetched from a remote is checked out tracking it, so a
+collaborator joins the shared
 task history; otherwise a new orphan branch is created with only the
 starter files, committed with hooks running.\& Works with any git that has
 \fBgit worktree\fR.\& Refuses an existing directory that is not a worktree.\&
-The changed \fI.\&gitignore\fR and \fI.\&taskmarkrc\fR are left for you to commit.\&
+The changed \fI.\&gitignore\fR (and \fI.\&taskmarkrc\fR, if written) are left for you to
+commit.\&
 .PP
 .RE
 \fB\-m\fR, \fB\-\-message\fR \fIMSG\fR
