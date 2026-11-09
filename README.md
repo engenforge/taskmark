@@ -136,6 +136,14 @@ To decouple task tracking history from primary code history while keeping task f
 5. **Tooling:** Automated by `tm init --orphan [branch]` (run from the repository root) and synchronized with `tm sync`. Git hooks run normally for both.
 6. **Search tools:** `ripgrep`-based tools, including many AI agents, skip ignored `.tasks/` in repository-wide searches but still read it by path. Name `.tasks/active.tm.md` in your agent instructions, or add a `.ignore` file containing `!/.tasks/` to include it in searches (see spec §10.2).
 
+**After cloning a project that uses this topology:** the clone fetches the `tasks` branch but does not mount it, so `.tasks/` is missing and `tm list` finds nothing. From the repository root, run:
+
+```bash
+tm init --orphan     # mounts origin/tasks at .tasks/, tracking it; existing task files are left as they are
+```
+
+Without `tm`, the equivalent is `git fetch origin && git worktree add .tasks tasks`. Do not create a fresh `tasks` branch by hand: it would have a history unrelated to the shared one. This repository tracks its own tasks this way.
+
 ---
 
 ## CLI Tool (`tm`)
