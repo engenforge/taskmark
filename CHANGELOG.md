@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.4.0] - 2026-11-08
+
 ### Added
 - `tm list`, `tm add`, `tm done`, and `tm move` for editing tasks from the command line, addressed by short handles derived from each task's text.
 - `tm init --orphan [BRANCH]` and `tm sync` to keep task files on a separate Git branch mounted at `.tasks/`.
