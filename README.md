@@ -241,6 +241,7 @@ tm dedent --fence < payload-excerpt.txt > trace.txt
 - Standard Unix utilities (`make`, `install`, `mkdir`)
 - *(Optional)* A **C compiler** (`gcc` or `clang`) and Lua development headers, only to run the test suite's CommonMark conformance oracle (`make test`) — never to install.
 - *(Optional)* `scdoc` (>= 1.11.5) to rebuild the `tm(1)` man page from source (`make man`)
+- *(Optional)* **Git**, only for the features built on it (`tm init --orphan`, `tm sync`, `tm done --git`) and for maintainers (`make dist`, `make dist-bin`, `make pre-release`). `make`, `make test`, and `make install` work without it; tests that need git are skipped and reported.
 
 ### Install via Makefile
 

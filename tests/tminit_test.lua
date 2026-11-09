@@ -9,6 +9,14 @@
 -- (identity, hooks, signing, defaults) can
 -- neither break nor be exercised by these tests. Hooks under test are
 -- installed per repository via core.hooksPath.
+-- Git is optional for building, testing, and installing Taskmark: the
+-- cases that need it are skipped, and reported, when it isn't installed.
+local function git_available()
+    local ok, _, code = os.execute("git --version >/dev/null 2>&1")
+    if type(ok) == "number" then return ok == 0 end
+    return ok == true and code == 0
+end
+
 if os.getenv("TM_TEST_GIT_ISOLATED") ~= "1" then
     local q = function(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
     local ok, how, code = os.execute(
@@ -235,6 +243,14 @@ do
     check("orphan_init", "non-git repo exits 1", code == 1)
     check("orphan_init", "non-git repo reports error", out:match("requires an initialized git repository") ~= nil)
     os.execute("rm -rf " .. dir)
+end
+
+-- Everything from here to the summary needs git.
+if not git_available() then
+    print("[SKIP] orphan_init: git is not installed; tm init --orphan cases not run")
+else
+
+do
 
     local git_dir = make_temp_dir("tminit_orphan_git")
     os.execute(string.format([[
@@ -388,6 +404,8 @@ do
         out:find(".gitignore", 1, true) ~= nil and out:find(".taskmarkrc", 1, true) ~= nil and out:find("commit", 1, true) ~= nil, out)
     os.execute("rm -rf " .. dir)
 end
+
+end -- git_available()
 
 -- ── Summary ──────────────────────────────────────────────────────────────────
 

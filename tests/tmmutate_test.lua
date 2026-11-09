@@ -3,6 +3,30 @@
 -- (SPEC-TASKMARK-04 AI & CLI ergonomics: atomic task mutations, compact
 -- listings, and ephemeral hashes).
 
+-- Run hermetically (see tests/tmsync_test.lua): the --git cases make
+-- commits in scratch repositories, which must not pick up the user's
+-- global, system, or environment-injected git configuration (signing,
+-- hooks, identity).
+-- Git is optional for building, testing, and installing Taskmark: the
+-- --git cases are skipped, and reported, when it isn't installed.
+local function git_available()
+    local ok, _, code = os.execute("git --version >/dev/null 2>&1")
+    if type(ok) == "number" then return ok == 0 end
+    return ok == true and code == 0
+end
+local HAVE_GIT = git_available()
+
+if os.getenv("TM_TEST_GIT_ISOLATED") ~= "1" then
+    local q = function(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
+    local ok, _, code = os.execute(
+        "env TM_TEST_GIT_ISOLATED=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 " ..
+        "GIT_AUTHOR_NAME=tm-test GIT_AUTHOR_EMAIL=tm-test@example.invalid " ..
+        "GIT_COMMITTER_NAME=tm-test GIT_COMMITTER_EMAIL=tm-test@example.invalid " ..
+        q(arg[-1] or "lua") .. " " .. q(arg[0]))
+    if type(ok) == "number" then os.exit(ok == 0 and 0 or 1) end
+    os.exit((ok and code == 0) and 0 or 1)
+end
+
 local script_dir = (arg[0] or "./tests/tmmutate_test.lua"):match("^(.*)/[^/]+$") or "."
 package.path = script_dir .. "/../src/?.lua;" .. package.path
 
@@ -324,6 +348,7 @@ do
     tmio.write_file_atomic(completed_file, "# Completed Tasks\n\n")
 
     local tm_cmd = "./src/tm"
+    local tm_abs_cli = io.popen("realpath " .. script_dir .. "/../src/tm"):read("*l")
 
     -- 1. tm add
     local status = os.execute(string.format("%s add --tasks-dir %s -p A 'First added task' > /dev/null", tm_cmd, tmio.shell_quote(tasks_dir)))
@@ -337,13 +362,25 @@ do
 
     local handle = list_out:match("^%[(%x%x%x%x)%]")
 
-    -- 3. tm done <handle> --git
-    local d_status = os.execute(string.format("%s done --tasks-dir %s %s --git HEAD > /dev/null", tm_cmd, tmio.shell_quote(tasks_dir), handle))
+    -- 3. tm done <handle>, with --git HEAD resolved in a scratch repository
+    -- (never this source tree, which may be an unpacked tarball).
+    local d_status
+    if HAVE_GIT then
+        os.execute("cd " .. tmio.shell_quote(tmp) .. " && git init -q && git commit -q --allow-empty -m init")
+        d_status = os.execute(string.format("cd %s && lua %s done --tasks-dir %s %s --git HEAD > /dev/null",
+            tmio.shell_quote(tmp), tmio.shell_quote(tm_abs_cli), tmio.shell_quote(tasks_dir), handle))
+    else
+        d_status = os.execute(string.format("%s done --tasks-dir %s %s > /dev/null", tm_cmd, tmio.shell_quote(tasks_dir), handle))
+    end
     check("cli", "tm done exits 0", d_status == 0 or d_status == true)
 
     local after_done = io.open(active_file):read("*a")
     check("cli", "task marked done in active.tm.md", after_done:match("%- %[x%] %(A%) First added task") ~= nil)
-    check("cli", "task has git: SHA", after_done:match("> %*%*Completed:%*%* %d%d%d%d%-%d%d%-%d%d git:%x+") ~= nil)
+    if HAVE_GIT then
+        check("cli", "task has git: SHA", after_done:match("> %*%*Completed:%*%* %d%d%d%d%-%d%d%-%d%d git:%x+") ~= nil)
+    else
+        print("[SKIP] cli: tm done --git (git is not installed)")
+    end
 
     -- 4. tm move from future to active
     local p2 = io.popen(string.format("%s list --tasks-dir %s %s", tm_cmd, tmio.shell_quote(tasks_dir), tmio.shell_quote(future_file)))
@@ -391,11 +428,11 @@ local function tm_in(dir, args, env)
 end
 local function git_repo(dir)
     os.execute("cd " .. tmio.shell_quote(dir) ..
-        " && git init -q && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init")
+        " && git init -q && git commit -q --allow-empty -m init")
     local p = io.popen("cd " .. tmio.shell_quote(dir) .. " && git rev-parse --short HEAD")
     local sha = p:read("*l")
     p:close()
-    return sha
+    return assert(sha, "git_repo: could not create a commit in " .. dir)
 end
 
 do
@@ -457,7 +494,9 @@ do
     cleanup_dir(tmp)
 end
 
-do
+if not HAVE_GIT then
+    print("[SKIP] done --git: git is not installed; --git parsing cases not run")
+else do
     -- --git parsing and validation.
     local tmp = make_temp_dir()
     local sha = git_repo(tmp)
@@ -490,7 +529,7 @@ do
     out, code = tm_in(tmp, "done Target extra")
     check("done", "unexpected extra argument is rejected", code ~= 0 and read(tmp .. "/.tasks/active.tm.md") == body, out)
     cleanup_dir(tmp)
-end
+end end -- HAVE_GIT
 
 do
     -- Completed goes into the leading field run, and the stamped file validates.

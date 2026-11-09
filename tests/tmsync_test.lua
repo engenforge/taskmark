@@ -9,6 +9,18 @@
 -- (identity, hooks, signing, defaults) can
 -- neither break nor be exercised by these tests. Hooks under test are
 -- installed per repository via core.hooksPath.
+-- Git is optional for building, testing, and installing Taskmark: the
+-- cases that need it are skipped, and reported, when it isn't installed.
+local function git_available()
+    local ok, _, code = os.execute("git --version >/dev/null 2>&1")
+    if type(ok) == "number" then return ok == 0 end
+    return ok == true and code == 0
+end
+if not git_available() then
+    print("[SKIP] tm sync: git is not installed")
+    os.exit(0)
+end
+
 if os.getenv("TM_TEST_GIT_ISOLATED") ~= "1" then
     local q = function(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
     local ok, how, code = os.execute(
