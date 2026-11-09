@@ -1,4 +1,4 @@
-.PHONY: all clean check test version man man-check check-scdoc-man help install install-bin install-man install-version uninstall check-modules dist dist-bin
+.PHONY: all clean check test version man man-check check-scdoc-man help install install-bin install-man install-version uninstall check-modules dist dist-bin pre-release
 
 TEST_RUNNER     = tests/test_runner.lua
 TMVAL           = src/tmval.lua
@@ -12,6 +12,7 @@ FILTER_TEST     = tests/tmfilter_test.lua
 IO_TEST         = tests/tmio_test.lua
 MUTATE_TEST     = tests/tmmutate_test.lua
 SYNC_TEST       = tests/tmsync_test.lua
+RELEASE_TEST    = tests/release_test.lua
 COMMONMARK_TEST = tests/commonmark_test.lua
 
 PREFIX   ?= /usr/local
@@ -40,6 +41,20 @@ DIST_NAME       := taskmark-$(DIST_VERSION)
 DIST_BIN_NAME   ?= $(DIST_NAME)-noarch
 DIST_DIR        := build/dist
 DIST_STAGE      := build/dist-stage
+
+# A tagged release must build from a matching VERSION, or the tarballs
+# would be named for one version and report another.
+define check_tag_version
+	@if [ -n "$(GIT_TAG)" ] && [ "$(patsubst v%,%,$(GIT_TAG))" != "$(TM_VERSION_BASE)" ]; then \
+	    echo "error: HEAD is tagged $(GIT_TAG) but VERSION says $(TM_VERSION_BASE)" >&2; exit 1; \
+	fi
+endef
+
+# make pre-release VERSION=X.Y.Z: validate, run RELEASE_CHECKS, then bump
+# VERSION and date the CHANGELOG's [Unreleased] section. Nothing is
+# committed, tagged, or pushed: review the diff and do that by hand.
+RELEASE_CHECKS ?= test
+VERSION_ARG    := $(if $(filter command line,$(origin VERSION)),$(VERSION))
 
 # Leave in $(DIST_DIR) only the current commit's source and noarch
 # tarballs, so SHA256SUMS never lists artifacts of an earlier commit.
@@ -167,6 +182,8 @@ test: build/cmark.so check-modules
 	@$(LUA) $(MUTATE_TEST)
 	@echo "=== tm sync Test Suite ==="
 	@$(LUA) $(SYNC_TEST)
+	@echo "=== Release tooling Test Suite ==="
+	@$(LUA) $(RELEASE_TEST)
 	@echo "=== CommonMark Conformance Oracle ==="
 	@$(LUA) $(COMMONMARK_TEST)
 	@echo "=== Man pages match their scdoc sources ==="
@@ -230,6 +247,7 @@ clean:
 dist:
 	@test -n "$(GIT_COMMIT)" || { echo "make dist must run in a git checkout" >&2; exit 1; }
 	@git diff --quiet HEAD -- || echo "note: uncommitted changes are not included; dist is built from HEAD ($(GIT_COMMIT))"
+	$(check_tag_version)
 	$(dist_prune)
 	$(RM) -r $(DIST_STAGE)
 	mkdir -p $(DIST_STAGE)/$(DIST_NAME)
@@ -245,6 +263,7 @@ dist:
 dist-bin:
 	@test -n "$(GIT_COMMIT)" || { echo "make dist-bin must run in a git checkout" >&2; exit 1; }
 	@git diff --quiet HEAD -- || echo "note: uncommitted changes are not included; dist-bin is built from HEAD ($(GIT_COMMIT))"
+	$(check_tag_version)
 	$(dist_prune)
 	$(RM) -r $(DIST_STAGE)
 	mkdir -p $(DIST_STAGE)/src $(DIST_STAGE)/install-root
@@ -258,12 +277,22 @@ dist-bin:
 	@echo "Installed binary tarball for $(DIST_BIN_NAME) (commit $(GIT_COMMIT)) in $(DIST_DIR)/:"
 	@cat $(DIST_DIR)/SHA256SUMS
 
+# VERSION=X.Y.Z names the release to prepare; it must not reach the checks'
+# sub-make, where (like any command-line variable) it would override the
+# VERSION file's value -- and steer make invocations inside the test suite.
+pre-release: MAKEOVERRIDES := $(filter-out VERSION=%,$(MAKEOVERRIDES))
+pre-release:
+	@$(LUA) scripts/release.lua check '$(VERSION_ARG)'
+	@$(if $(strip $(RELEASE_CHECKS)),$(MAKE) --no-print-directory $(RELEASE_CHECKS))
+	@$(LUA) scripts/release.lua prepare '$(VERSION_ARG)'
+
 help:
 	@echo "Taskmark Makefile targets:"
 	@echo "  all                 Nothing to build -- tm is pure Lua"
 	@echo "  check / test        Run full test suite (needs C compiler for oracle)"
 	@echo "  dist                Build reproducible source tarball in $(DIST_DIR)/"
 	@echo "  dist-bin            Build reproducible installed contents tarball in $(DIST_DIR)/"
+	@echo "  pre-release VERSION=X.Y.Z  Test, bump VERSION, date the CHANGELOG (no commit/tag)"
 	@echo "  install             Install tm to $(BINDIR) (PREFIX=$(PREFIX))"
 	@echo "  man                 Regenerate tm(1) man page (needs scdoc >= $(MIN_SCDOC_VERSION))"
 	@echo "  install-bin         Install only binaries and Lua modules"

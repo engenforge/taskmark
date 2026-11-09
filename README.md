@@ -266,6 +266,21 @@ make dist-bin
 
 `make dist` (source) and `make dist-bin` (installed files) build from the committed `HEAD`, producing byte-identical tarballs listed in `build/dist/SHA256SUMS`. Each first removes anything in `build/dist/` that is not one of the current commit's two tarballs, so after `make dist dist-bin` the directory and `SHA256SUMS` hold exactly that release pair. GNU tar and xz are required.
 
+### Cutting a Release
+
+`VERSION` is the only place the version number lives, and the `[Unreleased]` section of `CHANGELOG.md` collects changes as they land. To release:
+
+```bash
+make pre-release VERSION=0.4.0   # checks and tests, then bumps VERSION and dates the changelog
+git diff                         # review the two edited files
+git commit -am 'Release 0.4.0'
+git tag -s v0.4.0 -m 'Taskmark v0.4.0'
+make dist dist-bin               # build/dist/taskmark-0.4.0{,-noarch}.tar.xz and SHA256SUMS
+git push <remote> main v0.4.0
+```
+
+`make pre-release` refuses to run on a dirty tree, for a version that is not newer than `VERSION`, for an existing tag, or with an empty `[Unreleased]` section, and it runs `make test` (which includes `make man-check`) before changing anything. It only edits `VERSION` and `CHANGELOG.md`: committing, tagging, and signing are left to you, after review (`git checkout -- VERSION CHANGELOG.md` abandons it). `make dist` refuses to build a tagged commit whose `VERSION` does not match the tag.
+
 ### Uninstall
 
 ```bash
@@ -323,11 +338,13 @@ lua tests/commonmark_test.lua
 ├── CHANGELOG.md          # Project version history and specification timeline
 ├── LICENSE               # MIT License
 ├── Makefile              # Build, test, install, and packaging targets
-├── VERSION               # Semantic version string
+├── VERSION               # Semantic version string (the only copy; see Cutting a Release)
 ├── doc/
 │   ├── taskmark_spec.md  # SPEC-TASKMARK-04 Specification document
 │   ├── tm.1.scd          # scdoc source for tm(1) man page
 │   └── tm.1              # Formatted roff man page
+├── scripts/
+│   └── release.lua       # Steps behind `make pre-release`
 ├── src/
 │   ├── tm                # Executable CLI entrypoint / dispatcher
 │   ├── tmmeta.lua        # Flat `key: value` configuration reader

@@ -34,9 +34,9 @@ end
 local ldir = lib_dir()
 package.path = ldir .. "/?.lua;" .. ldir .. "/../src/?.lua;" .. package.path
 
--- Read the version from a VERSION file when present (repo root in the source
--- tree, or share/tm/VERSION after installation), falling back to a constant so
--- `tm version` always reports something sane.
+-- Read the version from a VERSION file (repo root in the source tree, or
+-- share/tm/VERSION after installation) -- the only place the number lives.
+-- Without one, say so rather than report a stale hard-coded version.
 local function read_version()
     for _, cand in ipairs({ lib_dir() .. "/VERSION", lib_dir() .. "/../VERSION" }) do
         local f = io.open(cand, "r")
@@ -49,7 +49,7 @@ local function read_version()
             if v and v ~= "" then return v end
         end
     end
-    return "0.3.0"
+    return "unknown"
 end
 
 local VERSION = read_version()

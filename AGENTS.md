@@ -12,6 +12,7 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
   - Sweep/archive tests: `lua tests/tmsweep_test.lua`
   - Init tests: `lua tests/tminit_test.lua`
   - Sync tests: `lua tests/tmsync_test.lua`
+  - Release tooling tests: `lua tests/release_test.lua`
   - Mutation tests (list/add/done/move): `lua tests/tmmutate_test.lua`
   - Config resolution tests: `lua tests/tmconfig_test.lua`
   - Filter tests: `lua tests/tmfilter_test.lua`
@@ -21,6 +22,7 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
 - Regenerate man page from scdoc source: `make man` (requires `scdoc >= 1.11.5`)
 - Reproducible source tarball in `build/dist/`: `make dist`
 - Reproducible installed-image tarball in `build/dist/`: `make dist-bin`
+- Prepare a release (maintainer only; never without being asked): `make pre-release VERSION=X.Y.Z` -- bumps `VERSION` and dates the changelog; the maintainer reviews, commits, and tags
 
 ## Boundaries
 
