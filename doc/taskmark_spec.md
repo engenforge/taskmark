@@ -510,7 +510,7 @@ By default a Taskmark tool operates entirely on the conventional paths above; no
 Configuration uses a flat `key: value` subset, read from two locations:
 
 * **Global** — `$XDG_CONFIG_HOME/taskmark/config`, defaulting to `~/.config/taskmark/config` when `XDG_CONFIG_HOME` is unset.
-* **Local** — `.taskmarkrc` in the directory the tool is invoked from.
+* **Local** — `.taskmarkrc` in the current working directory or discovered by searching upward to the enclosing Git repository or worktree root (§9.2).
 
 ```text
 # paths for this project
@@ -530,9 +530,9 @@ All keys are optional in both files. An absent key, an absent file, or a line a 
 Resolution is **per key**, not per file: a local file that sets only `tasks_dir` leaves every other key to the global file and the built-in defaults. For each path a tool needs, highest priority first:
 
 1. **Explicit command-line arguments** — a `--tasks-dir DIR` option, or a file path passed positionally to a subcommand that accepts one. These bypass both configuration files for the paths they name.
-2. **Local `.taskmarkrc`** in the current working directory.
+2. **Local `.taskmarkrc`** — in the current working directory, or discovered by searching upward from the current working directory, stopping at the enclosing Git repository or worktree boundary. When discovered in an ancestor directory, relative paths in the configuration file are resolved relative to the directory containing `.taskmarkrc`.
 3. **Global configuration file.**
-4. **Built-in defaults** — the conventional paths used throughout this specification.
+4. **Built-in defaults** — the conventional paths used throughout this specification. Inside a Git repository or worktree, unconfigured paths resolve relative to the repository root (§10).
 
 **Legacy task directory.** Before SPEC-TASKMARK-04 the default `tasks_dir` was `doc/tasks`. When no source above sets `tasks_dir`, `.tasks/` does not exist, and `doc/tasks/` does, a tool SHOULD resolve `tasks_dir` to `doc/tasks` so that an existing project keeps working unconfigured. Once `.tasks/` exists, or `tasks_dir` is set anywhere, the fallback never applies.
 

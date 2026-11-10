@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Local `.taskmarkrc` configuration is now discovered by searching upward from the current working directory to the enclosing Git repository or worktree root. Relative paths inside `.taskmarkrc` resolve relative to the directory containing it, and default task paths inside a Git worktree resolve relative to the repository root.
+
 ### Fixed
 - `tm init --orphan` no longer writes a redundant `.taskmarkrc` for the default `.tasks` directory.
 - Commands operating on a nonexistent task directory fail immediately reporting that the directory does not exist, rather than sleeping through lock retries and falsely reporting that the directory is locked by another process.

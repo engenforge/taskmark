@@ -323,6 +323,56 @@ do
     os.execute("rm -rf " .. dir)
 end
 
+-- ── Upward discovery of .taskmarkrc ─────────────────────────────
+
+do
+    local dir = make_temp_dir("tmconfig_upward")
+    local tm = io.popen("realpath " .. script_dir .. "/../src/tm"):read("*l")
+
+    -- 1. Create a project root with .taskmarkrc naming doc/tasks
+    write_file(dir .. "/.taskmarkrc", "tasks_dir: doc/tasks\n")
+    os.execute("mkdir -p " .. dir .. "/doc/tasks " .. dir .. "/src/sub")
+    write_file(dir .. "/doc/tasks/active.tm.md", "# Current\n\n- [ ] Root task\n")
+    write_file(dir .. "/doc/tasks/completed.tm.md", "# Completed\n")
+
+    -- Invoke tm list from inside doc/tasks
+    local out, code = run_cmd(string.format("cd %s/doc/tasks && lua %s list", dir, tm))
+    check("upward", "tm list from inside doc/tasks succeeds: exit 0", code == 0, out)
+    check("upward", "tm list from inside doc/tasks finds task", out:find("Root task", 1, true) ~= nil, out)
+
+    -- Invoke tm list from inside deeply nested src/sub
+    out, code = run_cmd(string.format("cd %s/src/sub && lua %s list", dir, tm))
+    check("upward", "tm list from inside src/sub succeeds: exit 0", code == 0, out)
+    check("upward", "tm list from inside src/sub finds task", out:find("Root task", 1, true) ~= nil, out)
+
+    -- Invoke tm sweep from inside doc/tasks
+    write_file(dir .. "/doc/tasks/active.tm.md", "# Current\n\n- [x] Swept task\n")
+    out, code = run_cmd(string.format("cd %s/doc/tasks && lua %s sweep", dir, tm))
+    check("upward", "tm sweep from inside doc/tasks succeeds: exit 0", code == 0, out)
+    check("upward", "tm sweep moves task into completed.tm.md",
+        (read_file(dir .. "/doc/tasks/completed.tm.md") or ""):find("Swept task", 1, true) ~= nil)
+
+    -- 2. Upward search stops at Git repository boundary
+    local outer = make_temp_dir("tmconfig_outer")
+    write_file(outer .. "/.taskmarkrc", "tasks_dir: outer_tasks\n")
+    local inner_repo = outer .. "/inner_repo"
+    os.execute("mkdir -p " .. inner_repo .. "/.git " .. inner_repo .. "/sub")
+    -- In inner_repo/sub, upward search stops at inner_repo (.git boundary),
+    -- does not see outer/.taskmarkrc, and falls back to .tasks
+    local cfg = tmconfig.resolve({ start_dir = inner_repo .. "/sub", global_config_path = NO_GLOBAL })
+    check("upward", "upward search does not cross .git boundary", cfg.tasks_dir:find("outer_tasks") == nil)
+
+    -- 3. In a Git repository with root .tasks/ and no .taskmarkrc:
+    -- subdirectories resolve to the repository root .tasks/
+    os.execute("mkdir -p " .. inner_repo .. "/.tasks")
+    write_file(inner_repo .. "/.tasks/active.tm.md", "# Tasks\n\n- [ ] Inner task\n")
+    out, code = run_cmd(string.format("cd %s/sub && lua %s list", inner_repo, tm))
+    check("upward", "tm list in git subdir resolves root .tasks: exit 0", code == 0, out)
+    check("upward", "tm list in git subdir finds inner task", out:find("Inner task", 1, true) ~= nil, out)
+
+    os.execute("rm -rf " .. dir .. " " .. outer)
+end
+
 -- ── Summary ─────────────────────────────────────────────────────────────
 
 print(string.format("\nResults: %d passed, %d failed, %d total\n", passed, failed, passed + failed))

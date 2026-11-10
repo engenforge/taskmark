@@ -5,7 +5,7 @@
 .nh
 .ad l
 .\" Begin generated content:
-.TH "tm" "1" "2026\-11\-08"
+.TH "tm" "1" "2026\-11\-09"
 .PP
 .SH NAME
 tm \- universal taskmark utility
@@ -305,7 +305,8 @@ optional:
 \fBGlobal\fR — \fI$XDG_CONFIG_HOME/taskmark/config\fR, falling back to
 \fI\(ti/.\&config/taskmark/config\fR when unset.\&
 .IP \(bu 4
-\fBLocal\fR — \fI.\&taskmarkrc\fR in the directory \fBtm\fR is invoked from.\&
+\fBLocal\fR — \fI.\&taskmarkrc\fR in the current working directory or discovered
+by searching upward to the enclosing repository root.\&
 .PD
 .PP
 .nf
@@ -320,7 +321,9 @@ archive_dir: archive
 .PP
 Resolution is per key, highest priority first: an explicit command\-line
 option, the local file, the global file, then the built\-in default shown
-above.\& When \fBtasks_dir\fR is not set anywhere and \fI.\&/.\&tasks\fR does not
+above.\& When discovered in an ancestor directory, relative paths in
+\fI.\&taskmarkrc\fR are resolved relative to the directory containing it.\&
+When \fBtasks_dir\fR is not set anywhere and \fI.\&/.\&tasks\fR does not
 exist but \fI.\&/doc/tasks\fR (the pre\-0.\&4 default) does, \fI.\&/doc/tasks\fR is used.\&
 An absent file, an absent key, or an unparseable line falls back
 silently to the next source.\& See \fIdoc/taskmark_spec.\&md\fR §9 for the full

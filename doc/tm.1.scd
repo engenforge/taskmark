@@ -225,7 +225,8 @@ optional:
 
 - *Global* — _\$XDG_CONFIG_HOME/taskmark/config_, falling back to
   _~/.config/taskmark/config_ when unset.
-- *Local* — _.taskmarkrc_ in the directory *tm* is invoked from.
+- *Local* — _.taskmarkrc_ in the current working directory or discovered
+  by searching upward to the enclosing repository root.
 
 ```
 tasks_dir: .tasks
@@ -237,7 +238,9 @@ archive_dir: archive
 
 Resolution is per key, highest priority first: an explicit command-line
 option, the local file, the global file, then the built-in default shown
-above. When *tasks_dir* is not set anywhere and _./.tasks_ does not
+above. When discovered in an ancestor directory, relative paths in
+_.taskmarkrc_ are resolved relative to the directory containing it.
+When *tasks_dir* is not set anywhere and _./.tasks_ does not
 exist but _./doc/tasks_ (the pre-0.4 default) does, _./doc/tasks_ is used.
 An absent file, an absent key, or an unparseable line falls back
 silently to the next source. See _doc/taskmark_spec.md_ §9 for the full

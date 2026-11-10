@@ -97,6 +97,35 @@ function M.load(path)
     return out
 end
 
+-- Search upward from `start_dir` (default: ".") for `.taskmarkrc`, stopping
+-- at the enclosing Git worktree or repository root (where .git exists as a
+-- directory or file), or at the filesystem root. Returns:
+--   config_path, root_dir
+-- where config_path is the path to .taskmarkrc, and root_dir is the directory
+-- containing it. If no .taskmarkrc is found, config_path is nil and root_dir
+-- is the repository root (if stopped by a .git boundary) or nil.
+function M.find_config(start_dir)
+    local cur = tmio.realpath(start_dir or ".")
+    if not cur then return nil, nil end
+
+    while true do
+        local cand = cur .. "/" .. M.CONFIG_FILENAME
+        if tmio.file_exists(cand) then
+            return cand, cur
+        end
+        local git_marker = cur .. "/.git"
+        if tmio.dir_exists(git_marker) or tmio.file_exists(git_marker) then
+            return nil, cur
+        end
+        if cur == "/" then
+            return nil, nil
+        end
+        local parent = cur:match("^(.*)/[^/]+$")
+        if not parent or parent == "" then parent = "/" end
+        cur = parent
+    end
+end
+
 -- Merge explicit `overrides` (e.g. a parsed --tasks-dir; nil fields are
 -- skipped) over the local .taskmarkrc over the global config file over the
 -- built-in defaults, per key -- not per file -- then derive the file paths
@@ -108,7 +137,14 @@ end
 -- M.global_config_path() (both mainly for tests).
 function M.resolve(overrides)
     overrides = overrides or {}
-    local local_cfg = M.load(overrides.config_path)
+    local config_file, root_dir
+    if overrides.config_path then
+        config_file = overrides.config_path
+    else
+        config_file, root_dir = M.find_config(overrides.start_dir)
+    end
+
+    local local_cfg = config_file and M.load(config_file) or {}
     local global_cfg = M.load(overrides.global_config_path or M.global_config_path())
 
     local cfg = {}
@@ -116,10 +152,28 @@ function M.resolve(overrides)
         cfg[key] = overrides[key] or local_cfg[key] or global_cfg[key] or default
     end
 
-    if not (overrides.tasks_dir or local_cfg.tasks_dir or global_cfg.tasks_dir)
-        and not tmio.dir_exists(cfg.tasks_dir)
-        and tmio.dir_exists(M.LEGACY_TASKS_DIR) then
-        cfg.tasks_dir = M.LEGACY_TASKS_DIR
+    local cwd = tmio.realpath(overrides.start_dir or ".")
+    local in_sub = root_dir and cwd and root_dir ~= cwd
+
+    if not overrides.tasks_dir and in_sub and not cfg.tasks_dir:match("^/") and not cfg.tasks_dir:match("^~") then
+        if local_cfg.tasks_dir then
+            cfg.tasks_dir = root_dir .. "/" .. cfg.tasks_dir
+        else
+            -- No tasks_dir configured; resolve default/legacy relative to root_dir
+            if tmio.dir_exists(root_dir .. "/" .. cfg.tasks_dir) then
+                cfg.tasks_dir = root_dir .. "/" .. cfg.tasks_dir
+            elseif tmio.dir_exists(root_dir .. "/" .. M.LEGACY_TASKS_DIR) then
+                cfg.tasks_dir = root_dir .. "/" .. M.LEGACY_TASKS_DIR
+            else
+                cfg.tasks_dir = root_dir .. "/" .. cfg.tasks_dir
+            end
+        end
+    else
+        if not (overrides.tasks_dir or local_cfg.tasks_dir or global_cfg.tasks_dir)
+            and not tmio.dir_exists(cfg.tasks_dir)
+            and tmio.dir_exists(M.LEGACY_TASKS_DIR) then
+            cfg.tasks_dir = M.LEGACY_TASKS_DIR
+        end
     end
 
     cfg.active_path    = cfg.tasks_dir .. "/" .. cfg.active_file

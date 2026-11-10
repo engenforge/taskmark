@@ -112,7 +112,7 @@ Optional conventions adapted from `todo.txt`, layered onto the existing task/pay
 
 All of the above paths are conventions, not hardcoded requirements. Configuration is read from two optional, flat `key: value` files — a local one for a single project and a global one for user-wide settings — resolved per key, highest priority first: an explicit command-line option, the local file, the global file, then the built-in default (see [`doc/taskmark_spec.md` §9](doc/taskmark_spec.md#9-configuration)):
 
-- **Local** — `.taskmarkrc` in the directory you run `tm` from.
+- **Local** — `.taskmarkrc` in the current working directory, or discovered by searching upward to the repository root.
 - **Global** — `$XDG_CONFIG_HOME/taskmark/config`, falling back to `~/.config/taskmark/config`.
 
 ```text

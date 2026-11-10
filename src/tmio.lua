@@ -23,6 +23,15 @@ function M.dir_exists(path)
     return false
 end
 
+-- Absolute, symlink-resolved form of an existing directory.
+function M.realpath(dir)
+    if not dir or dir == "" then dir = "." end
+    local p = io.popen("cd " .. M.shell_quote(dir) .. " 2>/dev/null && pwd -P")
+    local out = p and p:read("*l")
+    if p then p:close() end
+    return out
+end
+
 -- Quote a string for safe inclusion in a shell command.
 function M.shell_quote(s)
     return "'" .. tostring(s):gsub("'", "'\\''") .. "'"

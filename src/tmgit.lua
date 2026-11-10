@@ -32,12 +32,7 @@ function M.value(dir, ...)
 end
 
 -- Absolute, symlink-resolved form of an existing directory.
-function M.realpath(dir)
-    local p = io.popen("cd " .. tmio.shell_quote(dir) .. " 2>/dev/null && pwd -P")
-    local out = p and p:read("*l")
-    if p then p:close() end
-    return out
-end
+M.realpath = tmio.realpath
 
 -- Top level of the work tree containing `dir` (nil if not in one).
 function M.toplevel(dir)
