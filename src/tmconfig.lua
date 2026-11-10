@@ -97,6 +97,40 @@ function M.load(path)
     return out
 end
 
+-- Whether `dir` is the root of a Git repository or worktree that acts as
+-- a project boundary (stopping upward config discovery).
+-- A standalone repository (.git directory), a submodule (.git file pointing
+-- to modules/), or a worktree whose main checkout is NOT an ancestor of `dir`
+-- are boundaries. A linked worktree mounted inside its own enclosing repository
+-- (.git file pointing to an ancestor's .git/worktrees/) is not a boundary: the
+-- upward search continues into the enclosing repository holding .taskmarkrc.
+local function is_git_boundary(dir)
+    local git_dir = dir .. "/.git"
+    if tmio.dir_exists(git_dir) then
+        return true
+    end
+    if tmio.file_exists(git_dir) then
+        local f = io.open(git_dir, "r")
+        local line = f and f:read("*l") or ""
+        if f then f:close() end
+        local target = line:match("^gitdir:%s*(.-)%s*$")
+        if target then
+            if not target:match("^/") then
+                target = tmio.realpath(dir .. "/" .. target) or (dir .. "/" .. target)
+            end
+            local main_repo = target:match("^(.-)/%.git/worktrees/")
+            if main_repo then
+                main_repo = tmio.realpath(main_repo) or main_repo
+                if dir:sub(1, #main_repo + 1) == main_repo .. "/" then
+                    return false
+                end
+            end
+        end
+        return true
+    end
+    return false
+end
+
 -- Search upward from `start_dir` (default: ".") for `.taskmarkrc`, stopping
 -- at the enclosing Git worktree or repository root (where .git exists as a
 -- directory or file), or at the filesystem root. Returns:
@@ -113,8 +147,7 @@ function M.find_config(start_dir)
         if tmio.file_exists(cand) then
             return cand, cur
         end
-        local git_marker = cur .. "/.git"
-        if tmio.dir_exists(git_marker) or tmio.file_exists(git_marker) then
+        if is_git_boundary(cur) then
             return nil, cur
         end
         if cur == "/" then

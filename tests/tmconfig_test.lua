@@ -370,7 +370,31 @@ do
     check("upward", "tm list in git subdir resolves root .tasks: exit 0", code == 0, out)
     check("upward", "tm list in git subdir finds inner task", out:find("Inner task", 1, true) ~= nil, out)
 
-    os.execute("rm -rf " .. dir .. " " .. outer)
+    -- 4. Worktree layout: orphan tasks branch mounted at doc/tasks (like Zoril)
+    -- with .taskmarkrc at the repo root. The tasks worktree has a .git file.
+    -- Upward search must recognise the enclosing repository and not stop early.
+    local wt_repo = make_temp_dir("tmconfig_wt_repo")
+    os.execute("git -C " .. wt_repo .. " init -q")
+    os.execute("git -C " .. wt_repo .. " config user.name tm-test && git -C " .. wt_repo .. " config user.email tm@example.invalid")
+    write_file(wt_repo .. "/.taskmarkrc", "tasks_dir: doc/tasks\n")
+    write_file(wt_repo .. "/README.md", "zoril\n")
+    os.execute("git -C " .. wt_repo .. " add . && git -C " .. wt_repo .. " commit -q -m initial")
+    -- Mount orphan tasks worktree at doc/tasks
+    os.execute("git -C " .. wt_repo .. " worktree add -q --detach --no-checkout " .. wt_repo .. "/doc/tasks")
+    os.execute("git -C " .. wt_repo .. "/doc/tasks symbolic-ref HEAD refs/heads/tasks")
+    os.execute("git -C " .. wt_repo .. "/doc/tasks read-tree --empty")
+    write_file(wt_repo .. "/doc/tasks/active.tm.md", "# Active\n\n- [ ] Pending worktree task\n\n- [x] Completed worktree task\n")
+    write_file(wt_repo .. "/doc/tasks/completed.tm.md", "# Completed\n")
+
+    out, code = run_cmd(string.format("cd %s/doc/tasks && lua %s list", wt_repo, tm))
+    check("upward_worktree", "tm list inside mounted doc/tasks worktree succeeds: exit 0", code == 0, out)
+    check("upward_worktree", "tm list inside mounted doc/tasks worktree finds task", out:find("Pending worktree task", 1, true) ~= nil, out)
+
+    out, code = run_cmd(string.format("cd %s/doc/tasks && lua %s sweep --dry-run", wt_repo, tm))
+    check("upward_worktree", "tm sweep --dry-run inside mounted doc/tasks worktree succeeds: exit 0", code == 0, out)
+    check("upward_worktree", "tm sweep reports task to move", out:find("Completed worktree task", 1, true) ~= nil, out)
+
+    os.execute("rm -rf " .. dir .. " " .. outer .. " " .. wt_repo)
 end
 
 -- ── Summary ─────────────────────────────────────────────────────────────
