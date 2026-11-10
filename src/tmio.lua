@@ -75,11 +75,18 @@ function M.acquire_lock(dir, opts)
     opts = opts or {}
     local retries = opts.retries or 50
     local wait = opts.wait or 0.1
+    if not dir or dir == "" then dir = "." end
+    if not M.dir_exists(dir) then
+        return nil, "directory does not exist: " .. dir
+    end
     local path = lock_path(dir)
     for attempt = 0, retries do
         if exec_ok("mkdir " .. M.shell_quote(path) .. " 2>/dev/null") then
             held[path] = true
             return true
+        end
+        if not M.dir_exists(path) and not M.file_exists(path) then
+            return nil, "cannot create lock: " .. path
         end
         if attempt < retries then
             -- Fractional sleep is common but not POSIX; fall back to whole
@@ -88,8 +95,11 @@ function M.acquire_lock(dir, opts)
                 tostring(wait), math.max(1, math.ceil(wait))))
         end
     end
-    return nil, "task directory is locked by another tm process: " .. path ..
-        " (remove it if no tm process is running)"
+    if M.dir_exists(path) or M.file_exists(path) then
+        return nil, "task directory is locked by another tm process: " .. path ..
+            " (remove it if no tm process is running)"
+    end
+    return nil, "cannot create lock: " .. path
 end
 
 function M.release_lock(dir)

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `tm init --orphan` no longer writes a redundant `.taskmarkrc` for the default `.tasks` directory.
+- Commands operating on a nonexistent task directory fail immediately reporting that the directory does not exist, rather than sleeping through lock retries and falsely reporting that the directory is locked by another process.
 
 ---
 

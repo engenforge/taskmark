@@ -234,6 +234,17 @@ do
         "io_.with_lock(%q, function() io_.die('fatal') end)", src, dir)
     os.execute("lua -e " .. tmio.shell_quote(lua_src) .. " 2>/dev/null")
     check("lock", "die releases held locks", not tmio.file_exists(dir .. "/.tm.lock"))
+
+    -- Nonexistent directory fails immediately without spinning retries
+    local nosuch = test_sandbox .. "/nonexistent_dir"
+    local t0 = os.clock()
+    local ok_ne, err_ne = tmio.acquire_lock(nosuch, { retries = 50, wait = 0.1 })
+    local elapsed = os.clock() - t0
+    check("lock", "acquire on nonexistent directory returns nil", ok_ne == nil)
+    check("lock", "acquire on nonexistent directory reports does not exist",
+        type(err_ne) == "string" and err_ne:find("does not exist", 1, true) ~= nil and err_ne:find("locked by another tm process", 1, true) == nil,
+        tostring(err_ne))
+    check("lock", "acquire on nonexistent directory fails immediately", elapsed < 0.5)
 end
 
 -- ── lock wait on a sleep(1) without fractional seconds ──────────────────────

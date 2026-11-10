@@ -635,6 +635,26 @@ do
     check("lock", "failing sweep exits non-zero", code ~= 0)
     check("lock", "failing sweep leaves no lock behind", os.execute("test -e " .. dir .. "/.tm.lock") ~= true)
     os.execute("rm -rf " .. dir)
+
+    -- Sweep in an uninitialized directory reports directory does not exist,
+    -- not a false lock error, and fails immediately.
+    local empty_dir = tmpdir()
+    local abs_root = io.popen("cd " .. script_dir .. "/.. && pwd"):read("*l")
+    local tmsweep = abs_root .. "/src/tmsweep.lua"
+    local t0 = os.time()
+    local cmd = string.format("cd %s && lua %s --sweep 2>&1; echo __EXIT__$?", empty_dir, tmsweep)
+    local handle = io.popen(cmd)
+    local output = handle:read("*a")
+    handle:close()
+    local elapsed = os.time() - t0
+    local exit_code = tonumber(output:match("__EXIT__(%d+)")) or -1
+    output = output:gsub("__EXIT__%d+%s*$", "")
+    check("nonexistent_tasks_dir", "sweep in empty directory exits non-zero", exit_code ~= 0)
+    check("nonexistent_tasks_dir", "sweep reports directory does not exist",
+        output:find("does not exist", 1, true) ~= nil and output:find("locked by another tm process", 1, true) == nil,
+        output)
+    check("nonexistent_tasks_dir", "sweep fails immediately without lock retry sleep", elapsed < 2)
+    os.execute("rm -rf " .. empty_dir)
 end
 
 do

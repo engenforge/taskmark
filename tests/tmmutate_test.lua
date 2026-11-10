@@ -586,6 +586,25 @@ do
     out, code = tm_in(tmp, "list .tasks/nosuch.tm.md")
     check("list", "missing file is an error", code ~= 0, out)
     cleanup_dir(tmp)
+
+    -- Commands in an uninitialized directory fail immediately reporting directory does not exist
+    local empty = make_temp_dir()
+    local t0 = os.time()
+    out, code = tm_in(empty, "add 'A new task'")
+    local elapsed = os.time() - t0
+    check("add", "empty dir: reports directory does not exist",
+        code ~= 0 and out:find("does not exist", 1, true) ~= nil and out:find("locked by another tm process", 1, true) == nil,
+        out)
+    check("add", "empty dir: fails immediately without lock retry sleep", elapsed < 2)
+
+    t0 = os.time()
+    out, code = tm_in(empty, "done 1234")
+    elapsed = os.time() - t0
+    check("done", "empty dir: reports directory does not exist",
+        code ~= 0 and out:find("does not exist", 1, true) ~= nil and out:find("locked by another tm process", 1, true) == nil,
+        out)
+    check("done", "empty dir: fails immediately without lock retry sleep", elapsed < 2)
+    cleanup_dir(empty)
 end
 
 -- ── 9. Second review regressions ───────────────────────────────────────────
