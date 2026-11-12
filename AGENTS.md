@@ -30,6 +30,7 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
 ## Boundaries
 
 - **Always:** run `make test` before committing; ensure all tests pass cleanly.
+- **Always:** start any test suite that runs git with `require("testgit").isolate()` (see `tests/testgit.lua`), so it never uses the developer's git configuration (a signing key would prompt for its PIN). `make test` fails a suite that runs git without it.
 - **Always:** follow TDD protocol per `CONTEXT.md` (verify baseline, test-first, confirm failure, minimal implementation, verify, refactor, commit).
 - **Never:** push or tag without being asked; commit scratch notes or chat transcripts; add files specific to one AI tool (this file is the single, tool-neutral source of agent guidance).
 

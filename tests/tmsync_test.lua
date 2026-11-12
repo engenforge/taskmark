@@ -11,26 +11,9 @@
 -- installed per repository via core.hooksPath.
 -- Git is optional for building, testing, and installing Taskmark: the
 -- cases that need it are skipped, and reported, when it isn't installed.
-local function git_available()
-    local ok, _, code = os.execute("git --version >/dev/null 2>&1")
-    if type(ok) == "number" then return ok == 0 end
-    return ok == true and code == 0
-end
-if not git_available() then
-    print("[SKIP] tm sync: git is not installed")
-    os.exit(0)
-end
 
-if os.getenv("TM_TEST_GIT_ISOLATED") ~= "1" then
-    local q = function(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
-    local ok, how, code = os.execute(
-        "env TM_TEST_GIT_ISOLATED=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 " ..
-        "GIT_AUTHOR_NAME=tm-test GIT_AUTHOR_EMAIL=tm-test@example.invalid " ..
-        "GIT_COMMITTER_NAME=tm-test GIT_COMMITTER_EMAIL=tm-test@example.invalid " ..
-        q(arg[-1] or "lua") .. " " .. q(arg[0]))
-    if type(ok) == "number" then os.exit(ok == 0 and 0 or 1) end
-    os.exit((ok and code == 0) and 0 or 1)
-end
+package.path = ((arg[0] or ""):match("^(.*)/[^/]+$") or ".") .. "/?.lua;" .. package.path
+require("testgit").isolate({ skip_without_git = "tm sync" })
 
 local script_dir = (arg[0] or "./tests/tmsync_test.lua"):match("^(.*)/[^/]+$") or "."
 local abs_root = io.popen("cd " .. script_dir .. "/.. && pwd"):read("*l")

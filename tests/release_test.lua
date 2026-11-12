@@ -7,16 +7,8 @@
 
 -- Run hermetically (see tests/tmsync_test.lua): no global, system, or
 -- environment-injected git configuration -- in particular no signing.
-if os.getenv("TM_TEST_GIT_ISOLATED") ~= "1" then
-    local q = function(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
-    local ok, _, code = os.execute(
-        "env TM_TEST_GIT_ISOLATED=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 " ..
-        "GIT_AUTHOR_NAME=tm-test GIT_AUTHOR_EMAIL=tm-test@example.invalid " ..
-        "GIT_COMMITTER_NAME=tm-test GIT_COMMITTER_EMAIL=tm-test@example.invalid " ..
-        q(arg[-1] or "lua") .. " " .. q(arg[0]))
-    if type(ok) == "number" then os.exit(ok == 0 and 0 or 1) end
-    os.exit((ok and code == 0) and 0 or 1)
-end
+package.path = ((arg[0] or ""):match("^(.*)/[^/]+$") or ".") .. "/?.lua;" .. package.path
+require("testgit").isolate()
 
 local script_dir = (arg[0] or "./tests/release_test.lua"):match("^(.*)/[^/]+$") or "."
 local root = io.popen("cd " .. script_dir .. "/.. && pwd"):read("*l")

@@ -9,23 +9,9 @@
 -- hooks, identity).
 -- Git is optional for building, testing, and installing Taskmark: the
 -- --git cases are skipped, and reported, when it isn't installed.
-local function git_available()
-    local ok, _, code = os.execute("git --version >/dev/null 2>&1")
-    if type(ok) == "number" then return ok == 0 end
-    return ok == true and code == 0
-end
-local HAVE_GIT = git_available()
 
-if os.getenv("TM_TEST_GIT_ISOLATED") ~= "1" then
-    local q = function(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
-    local ok, _, code = os.execute(
-        "env TM_TEST_GIT_ISOLATED=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 " ..
-        "GIT_AUTHOR_NAME=tm-test GIT_AUTHOR_EMAIL=tm-test@example.invalid " ..
-        "GIT_COMMITTER_NAME=tm-test GIT_COMMITTER_EMAIL=tm-test@example.invalid " ..
-        q(arg[-1] or "lua") .. " " .. q(arg[0]))
-    if type(ok) == "number" then os.exit(ok == 0 and 0 or 1) end
-    os.exit((ok and code == 0) and 0 or 1)
-end
+package.path = ((arg[0] or ""):match("^(.*)/[^/]+$") or ".") .. "/?.lua;" .. package.path
+local HAVE_GIT = require("testgit").isolate()
 
 local script_dir = (arg[0] or "./tests/tmmutate_test.lua"):match("^(.*)/[^/]+$") or "."
 package.path = script_dir .. "/../src/?.lua;" .. package.path

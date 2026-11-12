@@ -9,16 +9,8 @@
 -- commits in scratch repositories, which must not pick up the user's
 -- global, system, or environment-injected git configuration (signing,
 -- hooks, identity) -- a signing key would otherwise prompt for its PIN.
-if os.getenv("TM_TEST_GIT_ISOLATED") ~= "1" then
-    local q = function(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
-    local ok, _, code = os.execute(
-        "env TM_TEST_GIT_ISOLATED=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 " ..
-        "GIT_AUTHOR_NAME=tm-test GIT_AUTHOR_EMAIL=tm-test@example.invalid " ..
-        "GIT_COMMITTER_NAME=tm-test GIT_COMMITTER_EMAIL=tm-test@example.invalid " ..
-        q(arg[-1] or "lua") .. " " .. q(arg[0]))
-    if type(ok) == "number" then os.exit(ok == 0 and 0 or 1) end
-    os.exit((ok and code == 0) and 0 or 1)
-end
+package.path = ((arg[0] or ""):match("^(.*)/[^/]+$") or ".") .. "/?.lua;" .. package.path
+local HAVE_GIT = require("testgit").isolate()
 
 local script_dir = (arg[0] or "./tests/tmconfig_test.lua"):match("^(.*)/[^/]+$") or "."
 package.path = script_dir .. "/../src/?.lua;" .. script_dir .. "/../vendor/?.lua;" .. package.path
@@ -388,28 +380,33 @@ do
     -- 4. Worktree layout: orphan tasks branch mounted at doc/tasks (like Zoril)
     -- with .taskmarkrc at the repo root. The tasks worktree has a .git file.
     -- Upward search must recognise the enclosing repository and not stop early.
-    local wt_repo = make_temp_dir("tmconfig_wt_repo")
-    os.execute("git -C " .. wt_repo .. " init -q")
-    os.execute("git -C " .. wt_repo .. " config user.name tm-test && git -C " .. wt_repo .. " config user.email tm@example.invalid")
-    write_file(wt_repo .. "/.taskmarkrc", "tasks_dir: doc/tasks\n")
-    write_file(wt_repo .. "/README.md", "zoril\n")
-    os.execute("git -C " .. wt_repo .. " add . && git -C " .. wt_repo .. " commit -q -m initial")
-    -- Mount orphan tasks worktree at doc/tasks
-    os.execute("git -C " .. wt_repo .. " worktree add -q --detach --no-checkout " .. wt_repo .. "/doc/tasks")
-    os.execute("git -C " .. wt_repo .. "/doc/tasks symbolic-ref HEAD refs/heads/tasks")
-    os.execute("git -C " .. wt_repo .. "/doc/tasks read-tree --empty")
-    write_file(wt_repo .. "/doc/tasks/active.tm.md", "# Active\n\n- [ ] Pending worktree task\n\n- [x] Completed worktree task\n")
-    write_file(wt_repo .. "/doc/tasks/completed.tm.md", "# Completed\n")
+    if not HAVE_GIT then
+        print("[SKIP] upward_worktree: git is not installed")
+    else
+        local wt_repo = make_temp_dir("tmconfig_wt_repo")
+        os.execute("git -C " .. wt_repo .. " init -q")
+        os.execute("git -C " .. wt_repo .. " config user.name tm-test && git -C " .. wt_repo .. " config user.email tm@example.invalid")
+        write_file(wt_repo .. "/.taskmarkrc", "tasks_dir: doc/tasks\n")
+        write_file(wt_repo .. "/README.md", "zoril\n")
+        os.execute("git -C " .. wt_repo .. " add . && git -C " .. wt_repo .. " commit -q -m initial")
+        -- Mount orphan tasks worktree at doc/tasks
+        os.execute("git -C " .. wt_repo .. " worktree add -q --detach --no-checkout " .. wt_repo .. "/doc/tasks")
+        os.execute("git -C " .. wt_repo .. "/doc/tasks symbolic-ref HEAD refs/heads/tasks")
+        os.execute("git -C " .. wt_repo .. "/doc/tasks read-tree --empty")
+        write_file(wt_repo .. "/doc/tasks/active.tm.md", "# Active\n\n- [ ] Pending worktree task\n\n- [x] Completed worktree task\n")
+        write_file(wt_repo .. "/doc/tasks/completed.tm.md", "# Completed\n")
 
-    out, code = run_cmd(string.format("cd %s/doc/tasks && lua %s list", wt_repo, tm))
-    check("upward_worktree", "tm list inside mounted doc/tasks worktree succeeds: exit 0", code == 0, out)
-    check("upward_worktree", "tm list inside mounted doc/tasks worktree finds task", out:find("Pending worktree task", 1, true) ~= nil, out)
+        out, code = run_cmd(string.format("cd %s/doc/tasks && lua %s list", wt_repo, tm))
+        check("upward_worktree", "tm list inside mounted doc/tasks worktree succeeds: exit 0", code == 0, out)
+        check("upward_worktree", "tm list inside mounted doc/tasks worktree finds task", out:find("Pending worktree task", 1, true) ~= nil, out)
 
-    out, code = run_cmd(string.format("cd %s/doc/tasks && lua %s sweep --dry-run", wt_repo, tm))
-    check("upward_worktree", "tm sweep --dry-run inside mounted doc/tasks worktree succeeds: exit 0", code == 0, out)
-    check("upward_worktree", "tm sweep reports task to move", out:find("Completed worktree task", 1, true) ~= nil, out)
+        out, code = run_cmd(string.format("cd %s/doc/tasks && lua %s sweep --dry-run", wt_repo, tm))
+        check("upward_worktree", "tm sweep --dry-run inside mounted doc/tasks worktree succeeds: exit 0", code == 0, out)
+        check("upward_worktree", "tm sweep reports task to move", out:find("Completed worktree task", 1, true) ~= nil, out)
+        os.execute("rm -rf " .. wt_repo)
+    end
 
-    os.execute("rm -rf " .. dir .. " " .. outer .. " " .. wt_repo)
+    os.execute("rm -rf " .. dir .. " " .. outer)
 end
 
 -- ── Summary ─────────────────────────────────────────────────────────────

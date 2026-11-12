@@ -1,4 +1,4 @@
-.PHONY: all clean check test version man man-check check-scdoc-man help install install-bin install-man install-version uninstall check-modules dist dist-bin pre-release
+.PHONY: all clean check check-test-isolation test version man man-check check-scdoc-man help install install-bin install-man install-version uninstall check-modules dist dist-bin pre-release
 
 TEST_RUNNER     = tests/test_runner.lua
 TMVAL           = src/tmval.lua
@@ -165,49 +165,59 @@ build/cmark.so: $(CMARK_WRAP) $(CMARK_CSRC) $(CMARK_HDRS)
 
 check: test
 
-# Every suite runs with git isolated from the user's configuration: the
-# tests make commits in scratch repositories, and a global signing key
-# would prompt for its PIN (or sign test commits). Suites that use git
-# also isolate themselves, for when they are run directly.
-test: export TM_TEST_GIT_ISOLATED  := 1
-test: export GIT_CONFIG_GLOBAL     := /dev/null
-test: export GIT_CONFIG_NOSYSTEM   := 1
-test: export GIT_CONFIG_COUNT      := 0
-test: export GIT_AUTHOR_NAME       := tm-test
-test: export GIT_AUTHOR_EMAIL      := tm-test@example.invalid
-test: export GIT_COMMITTER_NAME    := tm-test
-test: export GIT_COMMITTER_EMAIL   := tm-test@example.invalid
-test: build/cmark.so check-modules
+# Every suite runs with git isolated from the user's configuration, using
+# the environment tests/testgit.lua defines (the one place it is written):
+# the tests make commits in scratch repositories, and a global signing key
+# would prompt for its PIN or sign test commits. Suites that run git also
+# isolate themselves through tests/testgit.lua when run directly, and
+# check-test-isolation fails the build if one does not.
+TEST_GIT_ENV = $(shell $(LUA) tests/testgit.lua env)
+RUN_TEST     = env $(TEST_GIT_ENV) $(LUA)
+
+# A suite that mentions a git command must start with
+# require("testgit").isolate() (see tests/testgit.lua).
+check-test-isolation:
+	@missing=0; \
+	for f in tests/*.lua; do \
+		case "$$f" in tests/testgit.lua) continue ;; esac; \
+		if grep -qE 'git (init|commit|-C|worktree|checkout|merge|config|tag|add|rev-parse|clone|fetch|push|branch|symbolic-ref)' "$$f" \
+		   && ! grep -q 'require("testgit").isolate(' "$$f"; then \
+			echo "check-test-isolation: $$f runs git but does not call require(\"testgit\").isolate()" >&2; missing=1; \
+		fi; \
+	done; \
+	if [ $$missing -ne 0 ]; then exit 1; fi
+
+test: build/cmark.so check-modules check-test-isolation
 	@echo "=== tm meta Test Suite ==="
-	@$(LUA) $(META_TEST)
+	@$(RUN_TEST) $(META_TEST)
 	@echo "=== tm scan Test Suite ==="
-	@$(LUA) $(SCAN_TEST)
+	@$(RUN_TEST) $(SCAN_TEST)
 	@echo "=== tm validate Test Suite ==="
-	@$(LUA) $(TEST_RUNNER) $(TMVAL) $(FIXTURES)
+	@$(RUN_TEST) $(TEST_RUNNER) $(TMVAL) $(FIXTURES)
 	@echo "=== tm validate warnings Test Suite ==="
-	@$(LUA) $(VAL_TEST)
+	@$(RUN_TEST) $(VAL_TEST)
 	@echo "=== tm sweep Test Suite ==="
-	@$(LUA) $(SWEEP_TEST)
+	@$(RUN_TEST) $(SWEEP_TEST)
 	@echo "=== tm init Test Suite ==="
-	@$(LUA) $(INIT_TEST)
+	@$(RUN_TEST) $(INIT_TEST)
 	@echo "=== tm config Test Suite ==="
-	@$(LUA) $(CONFIG_TEST)
+	@$(RUN_TEST) $(CONFIG_TEST)
 	@echo "=== tm filter Test Suite ==="
-	@$(LUA) $(FILTER_TEST)
+	@$(RUN_TEST) $(FILTER_TEST)
 	@echo "=== tm io Test Suite ==="
-	@$(LUA) $(IO_TEST)
+	@$(RUN_TEST) $(IO_TEST)
 	@echo "=== tm id Test Suite ==="
-	@$(LUA) $(ID_TEST)
+	@$(RUN_TEST) $(ID_TEST)
 	@echo "=== tm mutate Test Suite ==="
-	@$(LUA) $(MUTATE_TEST)
+	@$(RUN_TEST) $(MUTATE_TEST)
 	@echo "=== tm check-shas / remap Test Suite ==="
-	@$(LUA) $(SHA_TEST)
+	@$(RUN_TEST) $(SHA_TEST)
 	@echo "=== tm sync Test Suite ==="
-	@$(LUA) $(SYNC_TEST)
+	@$(RUN_TEST) $(SYNC_TEST)
 	@echo "=== Release tooling Test Suite ==="
-	@$(LUA) $(RELEASE_TEST)
+	@$(RUN_TEST) $(RELEASE_TEST)
 	@echo "=== CommonMark Conformance Oracle ==="
-	@$(LUA) $(COMMONMARK_TEST)
+	@$(RUN_TEST) $(COMMONMARK_TEST)
 	@echo "=== Man pages match their scdoc sources ==="
 	@$(MAKE) -s man-check
 
