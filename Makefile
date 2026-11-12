@@ -164,6 +164,19 @@ build/cmark.so: $(CMARK_WRAP) $(CMARK_CSRC) $(CMARK_HDRS)
 	    $(LDFLAGS) -o $@ $(CMARK_WRAP) $(CMARK_CSRC) $(LUA_LDLIBS)
 
 check: test
+
+# Every suite runs with git isolated from the user's configuration: the
+# tests make commits in scratch repositories, and a global signing key
+# would prompt for its PIN (or sign test commits). Suites that use git
+# also isolate themselves, for when they are run directly.
+test: export TM_TEST_GIT_ISOLATED  := 1
+test: export GIT_CONFIG_GLOBAL     := /dev/null
+test: export GIT_CONFIG_NOSYSTEM   := 1
+test: export GIT_CONFIG_COUNT      := 0
+test: export GIT_AUTHOR_NAME       := tm-test
+test: export GIT_AUTHOR_EMAIL      := tm-test@example.invalid
+test: export GIT_COMMITTER_NAME    := tm-test
+test: export GIT_COMMITTER_EMAIL   := tm-test@example.invalid
 test: build/cmark.so check-modules
 	@echo "=== tm meta Test Suite ==="
 	@$(LUA) $(META_TEST)

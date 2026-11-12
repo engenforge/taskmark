@@ -5,6 +5,21 @@
 -- Self-contained runner (mirroring tests/tmsweep_test.lua / tminit_test.lua
 -- style).
 
+-- Run hermetically (see tests/tmsync_test.lua): the worktree cases make
+-- commits in scratch repositories, which must not pick up the user's
+-- global, system, or environment-injected git configuration (signing,
+-- hooks, identity) -- a signing key would otherwise prompt for its PIN.
+if os.getenv("TM_TEST_GIT_ISOLATED") ~= "1" then
+    local q = function(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
+    local ok, _, code = os.execute(
+        "env TM_TEST_GIT_ISOLATED=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 " ..
+        "GIT_AUTHOR_NAME=tm-test GIT_AUTHOR_EMAIL=tm-test@example.invalid " ..
+        "GIT_COMMITTER_NAME=tm-test GIT_COMMITTER_EMAIL=tm-test@example.invalid " ..
+        q(arg[-1] or "lua") .. " " .. q(arg[0]))
+    if type(ok) == "number" then os.exit(ok == 0 and 0 or 1) end
+    os.exit((ok and code == 0) and 0 or 1)
+end
+
 local script_dir = (arg[0] or "./tests/tmconfig_test.lua"):match("^(.*)/[^/]+$") or "."
 package.path = script_dir .. "/../src/?.lua;" .. script_dir .. "/../vendor/?.lua;" .. package.path
 

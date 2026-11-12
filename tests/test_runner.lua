@@ -127,12 +127,12 @@ for _, fixture in ipairs(fixtures) do
 
     local symbol
     if status == "PASS" then
-        symbol = "\27[32m[PASS]\27[0m"
+        symbol = "[PASS]"
     else
-        symbol = "\27[31m[FAIL]\27[0m"
+        symbol = "[FAIL]"
     end
 
-    print(string.format("  %s %s (expected=%d, got=%d)", symbol, fixture, expected_exit, exit_code))
+    print(string.format("%s %s (expected=%d, got=%d)", symbol, fixture, expected_exit, exit_code))
     if status == "FAIL" then
         -- Show first few lines of output for debugging
         local lines = {}
@@ -179,13 +179,13 @@ local function test_cli(name, ok, reason)
     local symbol
     if ok then
         passed = passed + 1
-        symbol = "\27[32m[PASS]\27[0m"
-        print(string.format("  %s %s", symbol, name))
+        symbol = "[PASS]"
+        print(string.format("%s %s", symbol, name))
         table.insert(results, {fixture = name, status = "PASS"})
     else
         failed = failed + 1
-        symbol = "\27[31m[FAIL]\27[0m"
-        print(string.format("  %s %s (%s)", symbol, name, reason or "failed"))
+        symbol = "[FAIL]"
+        print(string.format("%s %s (%s)", symbol, name, reason or "failed"))
         table.insert(results, {fixture = name, status = "FAIL", fail_reason = reason, expected = 0, got = 1})
     end
 end
