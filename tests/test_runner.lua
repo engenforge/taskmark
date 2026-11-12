@@ -63,7 +63,6 @@ end
 -- Sort for deterministic order
 table.sort(fixtures)
 
-print("Running " .. #fixtures .. " test(s)...\n")
 
 for _, fixture in ipairs(fixtures) do
     local fixture_path = fixtures_dir .. "/" .. fixture
@@ -132,7 +131,7 @@ for _, fixture in ipairs(fixtures) do
         symbol = "[FAIL]"
     end
 
-    print(string.format("%s %s (expected=%d, got=%d)", symbol, fixture, expected_exit, exit_code))
+    print(string.format("%s fixture: %s (expected=%d, got=%d)", symbol, fixture, expected_exit, exit_code))
     if status == "FAIL" then
         -- Show first few lines of output for debugging
         local lines = {}
@@ -190,7 +189,6 @@ local function test_cli(name, ok, reason)
     end
 end
 
-print("\nRunning multi-file and CLI test(s)...\n")
 
 do
     local out, code = run_val(string.format("%s/pass-blank-lines.tm.md %s/pass-valid-basic.tm.md", fixtures_dir, fixtures_dir))
@@ -489,7 +487,7 @@ do
 end
 
 -- Summary
-print(string.format("\nResults: %d passed, %d failed, %d total\n", passed, failed, passed + failed))
+print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))
 
 if failed > 0 then
     print("Failed tests:")

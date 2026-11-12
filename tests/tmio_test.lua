@@ -297,5 +297,5 @@ end
 
 clean_dir(test_sandbox)
 
-print(string.format("\nResults: %d passed, %d failed, %d total", passed, failed, passed + failed))
+print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))
 if failed > 0 then os.exit(1) end

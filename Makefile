@@ -1,4 +1,4 @@
-.PHONY: all clean check check-test-isolation test version man man-check check-scdoc-man help install install-bin install-man install-version uninstall check-modules dist dist-bin pre-release
+.PHONY: all clean check check-test-isolation test test-suites version man man-check check-scdoc-man help install install-bin install-man install-version uninstall check-modules dist dist-bin pre-release
 
 TEST_RUNNER     = tests/test_runner.lua
 TMVAL           = src/tmval.lua
@@ -172,7 +172,7 @@ check: test
 # isolate themselves through tests/testgit.lua when run directly, and
 # check-test-isolation fails the build if one does not.
 TEST_GIT_ENV = $(shell $(LUA) tests/testgit.lua env)
-RUN_TEST     = env $(TEST_GIT_ENV) $(LUA)
+RUN_TEST     = env $(TEST_GIT_ENV) $(LUA) -e 'io.stdout:setvbuf("line")'
 
 # A suite that mentions a git command must start with
 # require("testgit").isolate() (see tests/testgit.lua).
@@ -187,38 +187,30 @@ check-test-isolation:
 	done; \
 	if [ $$missing -ne 0 ]; then exit 1; fi
 
+# Results stream live (tee, line-buffered Lua); run every suite, then end with one summary line totalling all test lines.
 test: build/cmark.so check-modules check-test-isolation
-	@echo "=== tm meta Test Suite ==="
+	@mkdir -p build; \
+	{ $(MAKE) -s test-suites 2>&1; echo $$? > build/test.rc; } | awk '!/^Results:/ { print; fflush() }' | tee build/test.log; \
+	rc=$$(cat build/test.rc); \
+	awk '/^\[PASS\]/ {p++} /^\[FAIL\]/ {f++} END {printf "Total: %d passed, %d failed, %d tests\n", p, f, p+f}' build/test.log; \
+	exit $$rc
+
+test-suites:
 	@$(RUN_TEST) $(META_TEST)
-	@echo "=== tm scan Test Suite ==="
 	@$(RUN_TEST) $(SCAN_TEST)
-	@echo "=== tm validate Test Suite ==="
 	@$(RUN_TEST) $(TEST_RUNNER) $(TMVAL) $(FIXTURES)
-	@echo "=== tm validate warnings Test Suite ==="
 	@$(RUN_TEST) $(VAL_TEST)
-	@echo "=== tm sweep Test Suite ==="
 	@$(RUN_TEST) $(SWEEP_TEST)
-	@echo "=== tm init Test Suite ==="
 	@$(RUN_TEST) $(INIT_TEST)
-	@echo "=== tm config Test Suite ==="
 	@$(RUN_TEST) $(CONFIG_TEST)
-	@echo "=== tm filter Test Suite ==="
 	@$(RUN_TEST) $(FILTER_TEST)
-	@echo "=== tm io Test Suite ==="
 	@$(RUN_TEST) $(IO_TEST)
-	@echo "=== tm id Test Suite ==="
 	@$(RUN_TEST) $(ID_TEST)
-	@echo "=== tm mutate Test Suite ==="
 	@$(RUN_TEST) $(MUTATE_TEST)
-	@echo "=== tm check-shas / remap Test Suite ==="
 	@$(RUN_TEST) $(SHA_TEST)
-	@echo "=== tm sync Test Suite ==="
 	@$(RUN_TEST) $(SYNC_TEST)
-	@echo "=== Release tooling Test Suite ==="
 	@$(RUN_TEST) $(RELEASE_TEST)
-	@echo "=== CommonMark Conformance Oracle ==="
 	@$(RUN_TEST) $(COMMONMARK_TEST)
-	@echo "=== Man pages match their scdoc sources ==="
 	@$(MAKE) -s man-check
 
 # Print the current semantic version.
@@ -254,11 +246,11 @@ $(MAN): $(MAN_SRC) | check-scdoc-man
 MAN_NORMALIZE    = -e '/^\.\\"/d' -e 's/^\(\.TH "[^"]*" "[^"]*"\) "[^"]*"/\1 ""/'
 man-check:
 	@if ! command -v $(SCDOC) > /dev/null 2>&1; then \
-		echo "  SKIP: $(SCDOC) not installed"; exit 0; \
+		echo "[SKIP] man: $(SCDOC) not installed"; exit 0; \
 	fi; \
 	scdoc_ver=$$($(SCDOC) -v 2>/dev/null | awk '{print $$2}'); \
 	if [ -z "$$scdoc_ver" ] || ! $(LUA) -e 'local function p(s) local a,b,c=s:match("(%d+)%.(%d+)%.?(%d*)"); return {tonumber(a) or 0,tonumber(b) or 0,tonumber(c) or 0} end; local function ge(x,y) for i=1,3 do if x[i]>y[i] then return 0 elseif x[i]<y[i] then return 1 end end return 0 end; os.exit(ge(p("'$$scdoc_ver'"), p("$(MIN_SCDOC_VERSION)")))' 2>/dev/null; then \
-		echo "  SKIP: $(SCDOC) >= $(MIN_SCDOC_VERSION) required (found $${scdoc_ver:-unknown}); skipping man page check"; exit 0; \
+		echo "[SKIP] man: $(SCDOC) >= $(MIN_SCDOC_VERSION) required (found $${scdoc_ver:-unknown}); skipping man page check"; exit 0; \
 	fi; \
 	dir=build/man-check; mkdir -p $$dir; status=0; \
 	for page in $(MAN); do \
@@ -266,9 +258,9 @@ man-check:
 		sed $(MAN_NORMALIZE) $$page > $$dir/committed.norm; \
 		sed $(MAN_NORMALIZE) $$dir/fresh > $$dir/fresh.norm; \
 		if cmp -s $$dir/committed.norm $$dir/fresh.norm; then \
-			echo "  PASS: $$page"; \
+			echo "[PASS] man: $$page matches its scdoc source"; \
 		else \
-			echo "  FAIL: $$page is out of date; run 'make man' and commit the result"; status=1; \
+			echo "[FAIL] man: $$page is out of date; run 'make man' and commit the result"; status=1; \
 		fi; \
 	done; \
 	$(RM) -r $$dir; exit $$status

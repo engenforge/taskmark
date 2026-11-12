@@ -76,5 +76,5 @@ end
 
 -- ── Summary ──────────────────────────────────────────────────────────────
 
-print(string.format("\nResults: %d passed, %d failed, %d total\n", passed, failed, passed + failed))
+print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))
 os.exit(failed > 0 and 1 or 0)

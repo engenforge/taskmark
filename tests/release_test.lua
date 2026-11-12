@@ -98,7 +98,7 @@ local function in_git_checkout()
 end
 if not in_git_checkout() then
     print("[SKIP] pre-release, dist: needs git and a git checkout of the source")
-    print(string.format("\nResults: %d passed, %d failed, %d total\n", passed, failed, passed + failed))
+    print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))
     os.exit(failed > 0 and 1 or 0)
 end
 
@@ -212,5 +212,5 @@ do
     cleanup(dir)
 end
 
-print(string.format("\nResults: %d passed, %d failed, %d total\n", passed, failed, passed + failed))
+print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))
 os.exit(failed > 0 and 1 or 0)
