@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.5.0] - 2026-11-11
+
 ### Added
 - Task identifiers: `tm add` stamps each new task with a random five-character identifier on its line (`id:k7q2x`) that never changes and is never reused, and `tm id` stamps pending tasks that lack one. `tm list` shows the identifier as the task's handle, and `tm done` and `tm move` accept it. An identifier already in the text, such as one carried over from an existing scheme, is kept, and refused if already in use.
 - `tm next` prints the task to start: the first pending task with no unmet `Depends`, flagged priorities first.
