@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- tmscan.lua — SPEC-TASKMARK-04 §7 single-pass line scanner. Classifies
+-- tmscan.lua — SPEC-TASKMARK-05 §7 single-pass line scanner. Classifies
 -- each body line into exactly one kind, from its own leading characters
 -- alone. No document tree, no whole-file retention, no dependencies.
 local M = {}

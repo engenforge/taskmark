@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
 -- tests/tmsweep_test.lua — unit + end-to-end tests for tmsweep_core.lua /
--- tmsweep.lua (SPEC-TASKMARK-04 §5.3-§5.5: task-level sweep, blank-line
+-- tmsweep.lua (SPEC-TASKMARK-05 §5.3-§5.5: task-level sweep, blank-line
 -- normalization, and archive aging).
 --
 -- Self-contained runner (no shared harness with other repos — this project's

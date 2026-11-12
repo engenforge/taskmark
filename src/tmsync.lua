@@ -20,7 +20,7 @@ Usage:
 Options:
   -m, --message MSG   Commit message (default: "tasks: sync (<timestamp>)")
   --tasks-dir DIR     Directory holding the task files (default: .tasks, or
-                      tasks_dir set in .taskmarkrc -- see SPEC-TASKMARK-04 §9)
+                      tasks_dir set in .taskmarkrc -- see SPEC-TASKMARK-05 §9)
   -p, --push          Push after committing (the first push sets the
                       upstream to origin, or to the only remote)
 

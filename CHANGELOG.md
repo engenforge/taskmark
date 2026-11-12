@@ -9,7 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Task identifiers: `tm add` stamps each new task with a random five-character identifier on its line (`id:k7q2x`) that never changes and is never reused, and `tm id` stamps pending tasks that lack one. `tm list` shows the identifier as the task's handle, and `tm done` and `tm move` accept it. An identifier already in the text, such as one carried over from an existing scheme, is kept, and refused if already in use.
+- `tm next` prints the task to start: the first pending task with no unmet `Depends`, flagged priorities first.
+- `tm add` and `tm move` take `--before TASK` and `--after TASK` to place a task next to another, across headings.
+- `tm check-shas` reports `git:<sha>` citations that no longer name a commit, or with `--branch REF` are not reachable from it; `tm remap OLD NEW [OLD NEW...]` replaces citations of rewritten commits in every task file.
+- `tm list` and `tm next` filter by tag: `tm list +api @backend --not @review`.
+- `tm validate` prints non-fatal `[WARN]` lines for a malformed `Created`, `Due`, or `Completed` value, a `**Key:**` inside a field's value, and an identifier carried by two tasks. Completed tasks are checked only for their `Completed` stamp.
+
 ### Changed
+- **Specification (SPEC-TASKMARK-05):** every SPEC-TASKMARK-04 document still conforms; the grammar and rules V3-V14 are unchanged. Adds the optional task identifier (§4.3.3) and the registered `Depends` key (§4.4.2). §5.1 now states that position is the order of work, how a priority flag and dependencies affect it, and the `@review` convention for work awaiting review. §6.1 clarifies that "fits on one screen" means the task lines, and that headings divide work by time while other axes are tags. §4.3.3 also covers carrying over an existing numbering scheme and adopting identifiers in a project with completed work; §4.4.2 says a `Depends` value may carry free text, which tools ignore. §5.1 covers a review that sends a task back, that headings do not gate selection, and where a new task goes. §10.3 permits citing an identifier in a commit message and describes remapping stamped hashes after a squash.
+- `tm validate` colours its output only when standard output is a terminal and `NO_COLOR` is unset; piped and captured output is plain text.
+- Rule V7's message for an indented line outside a task names the likely cause (a wrapped prose or list line) instead of calling it a payload line.
 - Local `.taskmarkrc` configuration is now discovered by searching upward from the current working directory to the enclosing Git repository or worktree root. Relative paths inside `.taskmarkrc` resolve relative to the directory containing it, and default task paths inside a Git worktree resolve relative to the repository root.
 
 ### Fixed

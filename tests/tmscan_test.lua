@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- tests/tmscan_test.lua — unit tests for tmscan.lua (SPEC-TASKMARK-04 §7
+-- tests/tmscan_test.lua — unit tests for tmscan.lua (SPEC-TASKMARK-05 §7
 -- single-pass line scanner).
 
 local script_dir = (arg[0] or "./tests/tmscan_test.lua"):match("^(.*)/[^/]+$") or "."

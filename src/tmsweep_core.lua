@@ -1,5 +1,5 @@
 -- tmsweep_core.lua — Pure parsing/decision/mutation logic used by tmsweep
--- (SPEC-TASKMARK-04 §5.3-§5.5): task-level sweep, blank-line normalization,
+-- (SPEC-TASKMARK-05 §5.3-§5.5): task-level sweep, blank-line normalization,
 -- and archive aging. Kept require-able so tests can exercise each function
 -- directly.
 

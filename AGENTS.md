@@ -9,11 +9,14 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
   - Line-scanner unit tests: `lua tests/tmscan_test.lua`
   - Config reader unit tests: `lua tests/tmmeta_test.lua`
   - Validator tests: `lua tests/test_runner.lua src/tmval.lua tests/fixtures`
+  - Validator warning, message, and colour tests: `lua tests/tmval_test.lua`
+  - Identifier and dependency tests: `lua tests/tmid_test.lua`
   - Sweep/archive tests: `lua tests/tmsweep_test.lua`
   - Init tests: `lua tests/tminit_test.lua`
   - Sync tests: `lua tests/tmsync_test.lua`
   - Release tooling tests: `lua tests/release_test.lua`
-  - Mutation tests (list/add/done/move): `lua tests/tmmutate_test.lua`
+  - Mutation tests (list/next/add/id/done/move): `lua tests/tmmutate_test.lua`
+  - Citation tests (check-shas/remap): `lua tests/tmsha_test.lua`
   - Config resolution tests: `lua tests/tmconfig_test.lua`
   - Filter tests: `lua tests/tmfilter_test.lua`
   - I/O filesystem unit tests: `lua tests/tmio_test.lua`
@@ -34,11 +37,11 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
 
 - This project tracks its own work with Taskmark. Current tasks are in `.tasks/active.tm.md`, planned work in `.tasks/future.tm.md`, and finished work in `.tasks/completed.tm.md` (newest first).
 - `.tasks/` is a git worktree of the orphan `tasks` branch and is ignored on `main`, so repository-wide searches skip it: read or search those paths directly. A fresh clone does not have it: run `tm init --orphan` from the repository root to mount `origin/tasks` there (or `git fetch origin && git worktree add .tasks tasks`).
-- Prefer the CLI to hand-editing: `tm list` for a compact view, `tm done <handle> --git` to complete a task, `tm add`/`tm move` to add or promote one. Commit task changes with `tm sync`, never as part of a code commit.
+- Prefer the CLI to hand-editing: `tm list` for a compact view, `tm next` for the task to start, `tm done <handle> --git` to complete a task, `tm add`/`tm move` to add or promote one. Cite a task by its identifier (`id:k7q2x`), never by a hash handle; `tm id` stamps tasks that lack one. Commit task changes with `tm sync`, never as part of a code commit.
 
 ## Sources of truth
 
-1. **`doc/taskmark_spec.md`** is the normative authority for the SPEC-TASKMARK-04 specification.
+1. **`doc/taskmark_spec.md`** is the normative authority for the SPEC-TASKMARK-05 specification.
 2. The validator (`src/tmval.lua`) and line scanner (`src/tmscan.lua`) must enforce what the specification defines.
 3. Informative documents (`README.md`, `doc/tm.1.scd`, etc.) follow the specification.
 

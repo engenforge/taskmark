@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- tmmeta.lua — SPEC-TASKMARK-04 §9.1 flat `key: value` reader for the
+-- tmmeta.lua — SPEC-TASKMARK-05 §9.1 flat `key: value` reader for the
 -- configuration files (.taskmarkrc and the global config). Task documents
 -- carry no metadata block of their own. No dependencies.
 local M = {}

@@ -12,6 +12,9 @@ FILTER_TEST     = tests/tmfilter_test.lua
 IO_TEST         = tests/tmio_test.lua
 MUTATE_TEST     = tests/tmmutate_test.lua
 SYNC_TEST       = tests/tmsync_test.lua
+ID_TEST         = tests/tmid_test.lua
+SHA_TEST        = tests/tmsha_test.lua
+VAL_TEST        = tests/tmval_test.lua
 RELEASE_TEST    = tests/release_test.lua
 COMMONMARK_TEST = tests/commonmark_test.lua
 
@@ -107,7 +110,7 @@ REPRO_TAR        = $(TAR) --sort=name --format=gnu --mtime=@$(SOURCE_DATE_EPOCH)
 
 # The Lua modules installed under $(SHAREDIR); src/tm (the dispatcher) is
 # installed separately, to $(BINDIR).
-MODULES = tmmeta.lua tmscan.lua tmconfig.lua tmval.lua tmsweep.lua tmsweep_core.lua tmfilter.lua tminit.lua tmio.lua tmmutate.lua tmsync.lua tmgit.lua
+MODULES = tmmeta.lua tmscan.lua tmconfig.lua tmval.lua tmsweep.lua tmsweep_core.lua tmfilter.lua tminit.lua tmio.lua tmmutate.lua tmsync.lua tmgit.lua tmid.lua tmsha.lua
 
 UNAME_S := $(shell uname -s)
 
@@ -168,6 +171,8 @@ test: build/cmark.so check-modules
 	@$(LUA) $(SCAN_TEST)
 	@echo "=== tm validate Test Suite ==="
 	@$(LUA) $(TEST_RUNNER) $(TMVAL) $(FIXTURES)
+	@echo "=== tm validate warnings Test Suite ==="
+	@$(LUA) $(VAL_TEST)
 	@echo "=== tm sweep Test Suite ==="
 	@$(LUA) $(SWEEP_TEST)
 	@echo "=== tm init Test Suite ==="
@@ -178,8 +183,12 @@ test: build/cmark.so check-modules
 	@$(LUA) $(FILTER_TEST)
 	@echo "=== tm io Test Suite ==="
 	@$(LUA) $(IO_TEST)
+	@echo "=== tm id Test Suite ==="
+	@$(LUA) $(ID_TEST)
 	@echo "=== tm mutate Test Suite ==="
 	@$(LUA) $(MUTATE_TEST)
+	@echo "=== tm check-shas / remap Test Suite ==="
+	@$(LUA) $(SHA_TEST)
 	@echo "=== tm sync Test Suite ==="
 	@$(LUA) $(SYNC_TEST)
 	@echo "=== Release tooling Test Suite ==="

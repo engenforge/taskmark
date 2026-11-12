@@ -1,13 +1,15 @@
 ---
 project: Taskmark
-spec: SPEC-TASKMARK-04
+spec: SPEC-TASKMARK-05
 author: Jason Lenz, Engenforge LLC
-date: 2026-11-08
+date: 2026-11-12
 ---
 
-# Taskmark Specification (SPEC-TASKMARK-04)
+# Taskmark Specification (SPEC-TASKMARK-05)
 
 Taskmark is a deterministic, multi-line, plain-text task format designed to work with any text editor and with automated stream-parsing tools. It takes the single-line simplicity of `todo.txt` and adds an attached block of arbitrary context beneath each task. It relies on strict structural anchors — a fixed task token, a fixed payload indent, and pure CommonMark block separation — so that conforming tools never need to build an abstract syntax tree.
+
+SPEC-TASKMARK-05 extends SPEC-TASKMARK-04 without changing its grammar or its validator rules: every SPEC-TASKMARK-04 document conforms unchanged. It adds the optional task identifier (§4.3.3) and the `Depends` field (§4.4.2), and states the order of work and how a session selects a task (§5.1).
 
 ## 1. Conformance and Notation
 
@@ -29,7 +31,7 @@ All repository task files — `active.tm.md`, `future.tm.md`, `completed.tm.md`,
 
 ### 1.4 Structure vs. Convention
 
-This specification separates rules a validator enforces from conventions it does not. §§2–4 are enforceable structure. §§5–6 describe lifecycle operations and file semantics that tools implement and that a single file cannot be checked against. The priority flag (§4.3.1) and tags (§4.3.2) are optional extensions layered on the same grammar; a document that omits them entirely is fully conforming. §1.5 states exactly what a conforming validator checks.
+This specification separates rules a validator enforces from conventions it does not. §§2–4 are enforceable structure. §§5–6 describe lifecycle operations and file semantics that tools implement and that a single file cannot be checked against. The priority flag (§4.3.1), tags (§4.3.2), and the task identifier (§4.3.3) are optional extensions layered on the same grammar; a document that omits them entirely is fully conforming. §1.5 states exactly what a conforming validator checks.
 
 ### 1.5 Validator Obligations
 
@@ -50,7 +52,7 @@ A conforming validator MUST reject a strict-profile document for each of the fol
 | V13 | Top-level prose directly following a task line or payload line without an intervening blank line | 4.4.5 |
 | V14 | A leading frontmatter block (`---` … `---`) | 2.2 |
 
-A validator MAY emit non-fatal warnings beyond this list — an unrecognized labeled-field key, a malformed date — but MUST NOT fail the document for them. Field-level conventions such as tag placement (§4.3.2) and labeled-field placement (§4.4.2) are never enforced.
+A validator MAY emit non-fatal warnings beyond this list — an unrecognized labeled-field key, a malformed date, a second `**Key:**` inside a field's value (§4.4.2), an identifier carried by two tasks (§4.3.3) — but MUST NOT fail the document for them. Field-level conventions such as tag placement (§4.3.2) and labeled-field placement (§4.4.2) are never enforced.
 
 ## 2. File Format and Structure
 
@@ -111,7 +113,7 @@ The following are forbidden at top level: fenced code blocks, blockquotes, thema
 
 Prose and blank lines are permitted because they cost a parser nothing — a line matching neither a heading nor a task token nor the payload indent is simply skipped — and because sprint summaries, warnings, and planning notes are genuinely useful at the top of a file. The four forbidden constructs share one defect: each can contain arbitrary verbatim text at column 0, including a line that looks exactly like `- [ ] something`. Excluding them from top level means a line matching the task token at column 0 is always a task, with no enclosing-block check. Verbatim material belongs in a payload code fence (§4.4.3), where its indentation already distinguishes it.
 
-At column 0, `- ` is reserved strictly for task items (§4.3); a plain dash bullet (`- `) at top level is not permitted. Top-level prose lists MAY use `* `, `+ `, or ordered list markers (`1. `, `1) `). Sub-points and checklists for tasks belong in a payload (§4.4.3).
+At column 0, `- ` is reserved strictly for task items (§4.3); a plain dash bullet (`- `) at top level is not permitted. Top-level prose lists MAY use `* `, `+ `, or ordered list markers (`1. `, `1) `). A list item that wraps onto a second line continues at column 0, where CommonMark's lazy continuation keeps the line in the item; an indented continuation line is not top-level and is rejected (V7). Sub-points and checklists for tasks belong in a payload (§4.4.3).
 
 ### 4.2 Headings
 
@@ -139,7 +141,7 @@ priority := "(" [A-Z] ") "
 * **Completed token:** `^- \[x\] ` — identical but with a lowercase `x`. Uppercase `X` is not accepted.
 * The token is exactly six characters. Note that CommonMark sees only the leading `- ` as the list marker: `[ ]` is ordinary content that a renderer's task-list extension converts to a checkbox afterwards. The item's content column is therefore 2, which is what sets the payload indent in §4.4.1 — not the width of the token.
 
-**All machine-readable metadata on a task lives on this one line.** Tools MUST NOT scan payload lines for tags or priority flags. A payload may contain a pasted JSON body, a stack trace, or a git log excerpt; treating those as metadata would silently poison every query. Confining the searchable surface to the task line also keeps filtering stateless — a filter evaluates one line and either emits it or drops it, with nothing buffered.
+**All machine-readable metadata on a task lives on this one line.** Tools MUST NOT scan payload lines for tags, priority flags, or a task's own identifier. The one payload content a tool reads for selection is a `Depends` field (§4.4.2): it names *other* tasks, by the identifier on their own task lines, and is read as a labeled field, never by searching the payload's text. A payload may contain a pasted JSON body, a stack trace, or a git log excerpt; treating those as metadata would silently poison every query. Confining the searchable surface to the task line also keeps filtering stateless — a filter evaluates one line and either emits it or drops it, with nothing buffered.
 
 #### 4.3.1 Priority Flag (optional)
 
@@ -175,6 +177,25 @@ Position does have one consequence worth knowing, for users who prefer to sort w
 ```
 
 Users who want that behavior can choose a placement to suit it — projects first, contexts first, or whatever grouping they actually reach for. Users with tooling that extracts tags properly need not think about it.
+
+#### 4.3.3 Identifier — `id:` (optional)
+
+A task MAY carry one identifier: a word made of `id:` followed by four or more lowercase letters and digits. Pattern, for the word: `^id:[0-9a-z]{4,}$`.
+
+```markdown
+- [ ] +api Add rate limiting to the ingest endpoint id:k7q2x
+    > **Depends:** id:m3x8a
+```
+
+* **Purpose.** The identifier is the one name for a task that survives edits to its text. It stays on the line when the task moves between files, is completed, swept, and archived, so it is what a `Depends` field (§4.4.2), a commit message, a review note, or a conversation can cite.
+* **An ordinary word.** Like a tag, it is part of the description: the grammar does not treat it specially, it may sit anywhere on the line, and a validator MUST NOT require or reject one. If a line holds several such words, the first is the task's identifier.
+* **Scope:** only a word on the task line identifies a task. The same word in a payload or in prose is a reference to that task.
+* **Never changed, never reused.** Once written, an identifier stays with its task. An identifier is cited from places the task files cannot reach — commit messages (§10.3), review notes, other repositories — and those citations are permanent: a commit cannot be rewritten after it is published. Changing or reusing an identifier silently breaks every one of them. A new task SHOULD NOT be given an identifier that already occurs anywhere in the task files — on a task line or in a reference, including `completed.tm.md` and the archive — so that a new task can never satisfy an old reference. This binds whoever assigns an identifier: a tool that assigns one MUST check it against every task file first. It is not a rule a single document is validated against (§1.4).
+* **Drawn at random, or carried over.** Tools SHOULD assign identifiers (the reference CLI's `tm add` and `tm id` do), drawing each at random and checking the candidate against every task file before writing it. A sequential number needs a counter, and two branches that each take "the next number" collide silently; a random draw needs no shared state. The reference CLI draws five characters from a 32-symbol alphabet that omits `i`, `l`, `o`, and `u`, so no symbol can be mistaken for another. The cost is that a drawn identifier means nothing and is hard to say aloud or remember; a project that refers to tasks by number in conversation pays for collision safety in readability.
+* **Hand-chosen identifiers.** An identifier chosen by a person or derived from an existing scheme is equally valid, provided it is unused and fits the pattern. A project with its own numbering carries it over by rewriting each number into the form — `Z-0114` becomes `id:z0114` — and drawn and carried-over identifiers then coexist in the same files. A tool that adds a task whose text already carries an identifier SHOULD keep it rather than stamp a second one, and SHOULD refuse it if it is already in use (the reference CLI's `tm add` does both).
+* **Uniqueness is a convention.** It spans files, so no validator can enforce it on one document (§1.4). Two tasks end up with one identifier when a task is copied, or — rarely — when two branches draw the same value before they merge. Tools SHOULD warn about it; the repair is to give one of the tasks a new identifier and correct the references meant for it.
+* **Optional.** A task without an identifier is fully conforming and is addressed by its text. Completed tasks that predate the convention SHOULD otherwise be left as they are: completed text is a record.
+* **Adopting identifiers.** A project starting to use identifiers, or `Depends`, has completed work that open tasks may name. Since a dependency on a task no line carries is unmet (§5.1), one of two things is needed, done once: give those completed tasks identifiers as part of the migration — carrying over an existing number does exactly this, and is the one edit to completed text this specification endorses — or drop the `Depends` entries that name work already complete, which by definition no longer blocks anything. A migration that does neither leaves tasks that `tm next` never selects.
 
 ### 4.4 The Payload Block
 
@@ -215,6 +236,8 @@ Within a payload the leading `>` is reserved for exactly one purpose: a structur
 * A payload line beginning with `>` that does not match the labeled field start grammar or an immediate continuation line of an active labeled field — such as `> just a reminder` — is **not valid** (Rule V10).
 * **Placement is free; one leading run is the canonical form.** A field is recognized anywhere in a payload. Like every other rule in this format, the classification comes from the line's own leading characters (§4.1), so a field that follows freeform content is fully conforming and a validator MUST NOT reject one for its position. Fields SHOULD nevertheless be written as a single contiguous run immediately beneath the task line, and a tool that adds a field — a `Completed` stamp on completion (§5.2), say — SHOULD insert it into that run rather than appending it below the freeform content. The reason is consistency across authoring tools rather than parsing: one habitual place to look keeps a task's metadata visible without reading its whole payload, and keeps a stamped field to a one-line diff. For the same reason, a tool that *reads* a field MUST search the whole payload and MUST NOT assume the canonical arrangement.
 
+* **One field per line.** A value runs to the end of its line (and through any continuation lines), so a second `**Key:**` on the same line is text inside the first field's value, not a field. `> **Created:** 2026-11-07. **Branch:** testinfra` is a single `Created` field whose value is not a date; `Branch` is not a field at all. Write each field on a line of its own.
+
 Registered keys:
 
 | Key | Value | Notes |
@@ -222,12 +245,15 @@ Registered keys:
 | `Completed` | `YYYY-MM-DD`, optionally followed by ` git:<sha>` | §5.2 |
 | `Created` | `YYYY-MM-DD` | when the task was first entered |
 | `Due` | `YYYY-MM-DD` | target completion date |
+| `Depends` | one or more task identifiers (`id:k7q2x`, §4.3.3), optionally with free text | tasks that must be completed before this one can start; §5.1 |
 | `Context` | free text, one line | why the task matters |
 | `Notes` | free text, one line | working detail |
 
 **All task dates are labeled fields.** `Created`, `Due`, and `Completed` are the canonical and only forms this specification defines for the dates they name; there is no inline date syntax on the task line. One date convention, expressed one way, keeps extraction to a single pattern and keeps the task line reserved for the metadata that filtering and sorting actually use (§4.3).
 
-Additional keys are permitted; a tool that does not recognize a key MUST preserve it and MUST NOT fail on it. Only `Completed` carries lifecycle meaning (§5).
+Additional keys are permitted; a tool that does not recognize a key MUST preserve it and MUST NOT fail on it. Only `Completed` and `Depends` carry lifecycle meaning (§5).
+
+**Reading `Depends`.** A tool takes every `id:` word in the value as a dependency and ignores everything else, so a reason may sit beside a blocker: `> **Depends:** id:z0135 (stage1 builds the closure wrong)`. Free text is never a dependency, and "an identifier no task carries" (§5.1) means an `id:` word that names no task, never a stray word. A condition that is not a task — "a release cycle with no disagreement" — may be written there for people, but no tool checks it; a blocker that must stop selection has to be a task with an identifier.
 
 #### 4.4.3 Freeform Content
 
@@ -276,7 +302,15 @@ This section describes the working practices Taskmark is shaped around and the o
 
 ### 5.1 Session Start
 
-At the beginning of a working session, read `.tasks/active.tm.md` and choose the first pending (`- [ ]`) task with no unmet dependencies. Consult `future.tm.md` when context on upcoming work is needed.
+At the beginning of a working session, read `.tasks/active.tm.md` and choose the first pending (`- [ ]`) task that has no unmet dependencies and suits the session. Consult `future.tm.md` when context on upcoming work is needed. The reference CLI's `tm next` makes this selection.
+
+* **Position is the order of work.** Tasks are taken from the top of the file down, across headings. To change the order, move the task.
+* **A priority flag is the exception.** A task with a priority flag (§4.3.1) is taken ahead of position: flagged tasks come before unflagged ones, `A` first, and position decides among tasks with the same flag.
+* **Dependencies.** A task's `Depends` field (§4.4.2) names the tasks that must be completed before it can start. A dependency is unmet until the task it names is `- [x]`, in any task file, the archive included. A reference to an identifier that no task carries is also unmet — it is most likely a typing error — and tools SHOULD report it.
+* **State the order once.** Order SHOULD NOT be restated in prose, in numbered lists, or in payload notes ("before X", "after Y"): the copies go stale and then contradict the file. `Depends` is for a hard blocker only — a task that cannot be started — not for a preferred sequence, which position already expresses.
+* **Suiting the session.** Tags (§4.3.2) narrow the choice: a session working in one context takes the first task that carries its tag (`tm next @backend`). The same mechanism covers work that is finished but awaiting review, with no third task state: the author adds `@review` to the task line and leaves the task pending; an implementing session passes over it (`tm next --not @review`), a reviewing session selects it (`tm list @review`), and the reviewer completes it. A review that finds the work incomplete sends it back the same way: the reviewer records the finding in the payload and removes `@review`, and the task rejoins the queue at its position.
+* **Headings do not gate selection.** Selection reads the whole file, so once the tasks under the first heading are done or blocked, the next one comes from the heading below. A project that wants later work held back until someone promotes it keeps that work in `future.tm.md` (§5.4), which selection never reads.
+* **Placing a new task.** Since position is the order, a new task goes where it should be done: immediately before the first task it blocks, directly after the task it follows up, otherwise at the end of the queue — or in `future.tm.md` when it is not scheduled soon. Adding a task SHOULD NOT reorder the tasks already there; who may reorder is the project's decision, and a project with several authors does well to name one. The reference CLI places a task this way with `tm add --before <task>` or `--after <task>`, and `tm move` takes the same options.
 
 ### 5.2 Completing a Task
 
@@ -296,7 +330,7 @@ The `Completed` field MUST carry an ISO date. The short git hash of the implemen
 
 Steps 2 and 3 are a single mechanical edit, and are best left to a tool (the reference CLI's `tm done`) so that the token, indent, and field placement come out right every time.
 
-A recorded hash names the commit as it stood when the task was stamped. Rewriting history afterward — squash, amend, rebase — can leave it pointing at nothing. Taskmark neither detects nor repairs this, so it is worth keeping in mind when stamping work that has not yet reached its final form.
+A recorded hash names the commit as it stood when the task was stamped. Rewriting history afterward — squash, amend, rebase — can leave it pointing at nothing. The format cannot prevent this; §10.3 describes how to stamp so that it does not happen, and what to do after a branch is squashed. The reference CLI's `tm check-shas` reports a citation that no longer names a commit, and `tm remap` repairs one.
 
 The completed task stays in place in `active.tm.md` until it is swept.
 
@@ -344,7 +378,7 @@ An aged-out section is moved **verbatim** — its heading and every task and pay
 
 ### 6.1 `active.tm.md` — Current Sprint
 
-Normally one sprint under a single `# Current Sprint` heading. Keep the file short enough that all active work fits on one screen.
+Normally one sprint under a single `# Current Sprint` heading. Keep it short enough that its task lines — what `tm list` prints — fit on one screen. That is a limit on the number of tasks, not on their payloads: a task's checks, findings, and review notes belong with it and may run as long as the work needs. Work that is not scheduled soon belongs in `future.tm.md`, not at the bottom of this file.
 
 ```markdown
 # Current Sprint
@@ -371,6 +405,8 @@ When concurrent sprints are in flight, separate them with H2 headings:
 
 - [ ] Task belonging to sprint B
 ```
+
+Headings in this file divide work by *when* it is done — this sprint, the next. Any other axis — code branch, component, owner — is better carried by a tag (§4.3.2): `@context` for where or by whom the work is done, `+project` for what it belongs to. Position is the order of work across headings (§5.1), so headings used for a second axis turn the heading order into an accidental priority: a five-minute task under a later heading cannot be placed ahead of a long series under an earlier one.
 
 ### 6.2 `future.tm.md` — Planned Work
 
@@ -585,6 +621,6 @@ Search tools that honor `.gitignore` — `ripgrep` and the editors and AI coding
 
 In an orphan worktree topology, task files live on the task branch while code changes are committed to code branches. The `Completed` field (§5.2) records the *code* commit that implemented the task (`git:<sha>`), never the task-branch commit that recorded the completion. Both branches share one object store, so the reference resolves in any clone that has fetched the code branch.
 
-The link is deliberately one-directional, from task to commit: code commit messages do not reference tasks, and Taskmark has no stable task identifiers to put in them (tooling handles are derived from task text and change when it is edited). To find the task behind a commit, search the task files for its hash — `rg <sha> .tasks/` — including `completed.tm.md` and `archive/`.
+The recorded link runs from task to commit, and nothing in the format requires the reverse. To find the task behind a commit, search the task files for its hash — `rg <sha> .tasks/` — including `completed.tm.md` and `archive/`. A project that wants the reverse link as well MAY cite the task's identifier (§4.3.3) in the commit message — `Task: id:k7q2x` — which stays valid however the task's text is later edited. A tooling handle derived from the task's text does not, and SHOULD NOT be cited. A citation in a published commit can never be corrected, which is the strongest reason an identifier is never changed or reused.
 
-A recorded hash can stop resolving if the commit it names is discarded. In particular, a hash taken from a feature branch that is later squash-merged or rebased names a commit that may never reach `main`, and is lost once that branch is deleted and garbage-collected. Stamp the hash of the commit as it lands on the long-lived branch, or update the stamp after merging.
+A recorded hash can stop resolving if the commit it names is discarded. In particular, a hash taken from a feature branch that is later squash-merged or rebased names a commit that may never reach `main`, and is lost once that branch is deleted and garbage-collected. Stamp the hash of the commit as it lands on the long-lived branch, or update the stamp after merging. When a squash replaces commits whose hashes are already stamped, replace each old hash with its new one everywhere it is cited, in a task commit of its own that lists the old/new pairs, so the remapping is itself auditable. The reference CLI does the replacement with `tm remap OLD NEW [OLD NEW...]`, across every task file including the archive, and `tm check-shas --branch main` confirms afterward that every citation names a commit on the long-lived branch.

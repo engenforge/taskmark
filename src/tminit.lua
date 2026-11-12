@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- tminit — SPEC-TASKMARK-04 taskmark directory initialization.
+-- tminit — SPEC-TASKMARK-05 taskmark directory initialization.
 -- Exposed as the `init` subcommand of the `tm` tool, and also runnable directly:
 --   tminit [--orphan [BRANCH]] [--tasks-dir DIR]
 --   tminit -h | --help
@@ -11,7 +11,7 @@ local tmio = require("tmio")
 local tmgit = require("tmgit")
 
 local USAGE = [=[
-tm init — SPEC-TASKMARK-04 taskmark project initialization
+tm init — SPEC-TASKMARK-05 taskmark project initialization
 
 Usage:
   tm init [--orphan [BRANCH]] [--tasks-dir DIR]
@@ -24,7 +24,7 @@ Options:
                    new orphan branch -- add the directory to .gitignore
                    (and, if it is not .tasks, set tasks_dir in .taskmarkrc)
   --tasks-dir DIR  Directory to scaffold (default: .tasks, or the
-                   tasks_dir set in .taskmarkrc -- see SPEC-TASKMARK-04 §9)
+                   tasks_dir set in .taskmarkrc -- see SPEC-TASKMARK-05 §9)
   -h, --help       Show this help
 ]=]
 

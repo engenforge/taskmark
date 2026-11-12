@@ -9,7 +9,7 @@ local passed = 0
 local failed = 0
 local results = {}
 
--- SPEC-TASKMARK-04 §1.5 rule each fail-* fixture is expected to trip. tmval
+-- SPEC-TASKMARK-05 §1.5 rule each fail-* fixture is expected to trip. tmval
 -- reports each violation as "Line N: V<n>: <message>", so matching the rule
 -- code is sufficient and doesn't couple this table to exact wording.
 local expected_diagnostics = {
@@ -196,8 +196,8 @@ do
     local out, code = run_val(string.format("%s/pass-blank-lines.tm.md %s/pass-valid-basic.tm.md", fixtures_dir, fixtures_dir))
     test_cli("multi-file: multiple valid files exit 0", code == 0, "expected exit 0, got " .. code)
     test_cli("multi-file: multiple valid files all reported PASS",
-        out:find("pass-blank-lines.tm.md conforms to SPEC-TASKMARK-04", 1, true) ~= nil and
-        out:find("pass-valid-basic.tm.md conforms to SPEC-TASKMARK-04", 1, true) ~= nil)
+        out:find("pass-blank-lines.tm.md conforms to SPEC-TASKMARK-05", 1, true) ~= nil and
+        out:find("pass-valid-basic.tm.md conforms to SPEC-TASKMARK-05", 1, true) ~= nil)
 end
 
 do
@@ -257,7 +257,7 @@ do
     -- 1. --fix on already passing file
     local out_pass, code_pass = run_val(string.format("--fix %s/pass-valid-basic.tm.md", fixtures_dir))
     test_cli("--fix: passing file exits 0", code_pass == 0)
-    test_cli("--fix: passing file reports conforms", out_pass:find("conforms to SPEC-TASKMARK-04", 1, true) ~= nil)
+    test_cli("--fix: passing file reports conforms", out_pass:find("conforms to SPEC-TASKMARK-05", 1, true) ~= nil)
 
     -- 2. --fix on fixable file with V8, V10, V11, and V6
     local bad_content = [[# Preamble
@@ -398,7 +398,7 @@ do
     os.remove(tmp_uni)
 end
 
--- SPEC-TASKMARK-04 Tests: Multi-line labeled fields (V10) and Payload sub-lists / continuation indents (V8)
+-- SPEC-TASKMARK-05 Tests: Multi-line labeled fields (V10) and Payload sub-lists / continuation indents (V8)
 do
     local tmp_spec03 = "/tmp/tm_cli_spec03_test.tm.md"
 
@@ -416,7 +416,7 @@ do
     f1:write(valid_multiline_label)
     f1:close()
     local out1, code1 = run_val(tmp_spec03)
-    test_cli("SPEC-TASKMARK-04: multi-line labeled field passes validation", code1 == 0)
+    test_cli("SPEC-TASKMARK-05: multi-line labeled field passes validation", code1 == 0)
 
     -- 2. Valid payload sub-list and hanging continuation line passes validation
     local valid_payload_sublist = [[# Tasks
@@ -435,7 +435,7 @@ do
     f2:write(valid_payload_sublist)
     f2:close()
     local out2, code2 = run_val(tmp_spec03)
-    test_cli("SPEC-TASKMARK-04: payload sub-lists and continuation indents pass validation", code2 == 0)
+    test_cli("SPEC-TASKMARK-05: payload sub-lists and continuation indents pass validation", code2 == 0)
 
     -- 3. Forbidden: 6+ spaces after a blank line outside code fence still fails Rule V8
     local bad_blank_indent = [[# Tasks
@@ -449,7 +449,7 @@ do
     f3:write(bad_blank_indent)
     f3:close()
     local out3, code3 = run_val(tmp_spec03)
-    test_cli("SPEC-TASKMARK-04: 6+ spaces after blank line fails Rule V8", code3 == 1 and out3:find("V8:", 1, true) ~= nil)
+    test_cli("SPEC-TASKMARK-05: 6+ spaces after blank line fails Rule V8", code3 == 1 and out3:find("V8:", 1, true) ~= nil)
 
     -- 4. Forbidden: excessive indentation past column 8 (content indent > 4) still fails Rule V8
     local bad_excess_indent = [[# Tasks
@@ -462,7 +462,7 @@ do
     f4:write(bad_excess_indent)
     f4:close()
     local out4, code4 = run_val(tmp_spec03)
-    test_cli("SPEC-TASKMARK-04: >4 spaces content indent fails Rule V8", code4 == 1 and out4:find("V8:", 1, true) ~= nil)
+    test_cli("SPEC-TASKMARK-05: >4 spaces content indent fails Rule V8", code4 == 1 and out4:find("V8:", 1, true) ~= nil)
 
     -- 5. --fix preserves multi-line labeled fields and sub-lists
     local fix_preserves = [[# Tasks
@@ -480,10 +480,10 @@ do
     f5:write(fix_preserves)
     f5:close()
     local out5, code5 = run_val("--fix " .. tmp_spec03)
-    test_cli("SPEC-TASKMARK-04: --fix succeeds on fixture", code5 == 0)
+    test_cli("SPEC-TASKMARK-05: --fix succeeds on fixture", code5 == 0)
     local fixed_content = io.open(tmp_spec03, "r"):read("*a")
-    test_cli("SPEC-TASKMARK-04: --fix preserves multi-line labeled field", fixed_content:find("    > Second continuation line%.") ~= nil)
-    test_cli("SPEC-TASKMARK-04: --fix preserves sub-bullet indent", fixed_content:find("      %- Nested bullet") ~= nil)
+    test_cli("SPEC-TASKMARK-05: --fix preserves multi-line labeled field", fixed_content:find("    > Second continuation line%.") ~= nil)
+    test_cli("SPEC-TASKMARK-05: --fix preserves sub-bullet indent", fixed_content:find("      %- Nested bullet") ~= nil)
 
     os.remove(tmp_spec03)
 end

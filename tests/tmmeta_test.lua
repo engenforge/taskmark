@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- tests/tmmeta_test.lua — unit tests for tmmeta.lua, the SPEC-TASKMARK-04
+-- tests/tmmeta_test.lua — unit tests for tmmeta.lua, the SPEC-TASKMARK-05
 -- §9.1 flat `key: value` configuration reader.
 
 local script_dir = (arg[0] or "./tests/tmmeta_test.lua"):match("^(.*)/[^/]+$") or "."

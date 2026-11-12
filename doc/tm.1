@@ -5,7 +5,7 @@
 .nh
 .ad l
 .\" Begin generated content:
-.TH "tm" "1" "2026\-11\-09"
+.TH "tm" "1" "2026\-11\-10"
 .PP
 .SH NAME
 tm \- universal taskmark utility
@@ -14,9 +14,9 @@ tm \- universal taskmark utility
 \fBtm\fR <command> [options]
 .PP
 .SH DESCRIPTION
-\fBtm\fR is the command\-line interface for SPEC\-TASKMARK\-04 taskmark files.\& It
-provides subcommands for atomic task mutations, compact task listings with
-ephemeral hex handles, sweeping completed tasks between task documents in
+\fBtm\fR is the command\-line interface for SPEC\-TASKMARK\-05 taskmark files.\& It
+provides subcommands for atomic task mutations, compact task listings
+addressed by task identifier, sweeping completed tasks between task documents in
 strict reverse chronological order, archiving aged\-out sections, validating
 files for spec compliance, and filtering arbitrary text into and out of a
 payload block.\& The specification it implements is documented in
@@ -45,24 +45,53 @@ hooks run as for any commit, and git'\&s own messages are shown when a
 commit or push fails.\&
 .PP
 .RE
-\fBlist\fR [\-\-pending|\-\-all] [\-\-tasks\-dir \fIDIR\fR] [\fIfile\fR.\&.\&.\&]
+\fBlist\fR [\-\-pending|\-\-all] [\-\-not \fITAG\fR].\&.\&.\& [\fITAG\fR.\&.\&.\&] [\-\-tasks\-dir \fIDIR\fR] [\fIfile\fR.\&.\&.\&]
 .RS 4
 Print one line per task, its handle and summary, e.\&g.\&
-"[f4a1] (A) Task text", without payload blocks, to keep listings short
-for humans and AI agents alike.\& By default, lists pending tasks from the
-active task document.\& With \fB\-\-all\fR, lists both pending and completed
-tasks (completed tasks marked `[x]`).\& Given several files, each listing
+"[k7q2x] (A) Task text id:k7q2x", without payload blocks, to keep
+listings short for humans and AI agents alike.\& By default, lists pending
+tasks from the active task document.\& With \fB\-\-all\fR, lists both pending
+and completed tasks (completed tasks marked `[x]`).\& An argument starting
+with '\&+'\& or '\&@'\& is a tag: only tasks carrying every \fITAG\fR given, as a
+whole word anywhere on the task line, are listed, and \fB\-\-not\fR \fITAG\fR
+leaves out tasks carrying it.\& Given several files, each listing
 is headed `== <file>`.\& A file with nothing to list prints nothing on
 standard output and a short note on standard error.\& A missing file is
 an error.\&
 .PP
 .RE
-\fBadd\fR \fI<task\-text>\fR [\-p|\-\-priority \fIPRI\fR] [\-\-section \fISECTION\fR] [\-\-file \fIFILE\fR] [\-\-tasks\-dir \fIDIR\fR]
+\fBnext\fR [\-\-not \fITAG\fR].\&.\&.\& [\fITAG\fR.\&.\&.\&] [\-\-file \fIFILE\fR] [\-\-tasks\-dir \fIDIR\fR]
+.RS 4
+Print the task to start, in the format of \fBlist\fR: among the pending
+tasks of \fIactive.\&tm.\&md\fR (or \fB\-\-file\fR) that match the tag filters and
+have no unmet dependency, the one with the highest priority flag, or
+the first in file order when none is flagged.\& A dependency (see TASK
+IDENTIFIERS) is met once the task it names is completed, in any task
+file.\& A dependency naming no task counts as unmet and is reported on
+standard error.\& When no task is ready, prints nothing on standard
+output, a note on standard error, and exits 0.\&
+.PP
+.RE
+\fBadd\fR \fI<task\-text>\fR [\-p|\-\-priority \fIPRI\fR] [\-\-section \fISECTION\fR | \-\-before \fITASK\fR | \-\-after \fITASK\fR] [\-\-file \fIFILE\fR] [\-\-tasks\-dir \fIDIR\fR]
 .RS 4
 Add a pending task at the end of the named section'\&s own content
 (before its first subheading), or of the first heading'\&s when no
-\fB\-\-section\fR is given.\& An unknown section or a missing file is an error;
-no file is ever created.\& \fB\-p A\fR adds the `(A)` priority flag.\&
+\fB\-\-section\fR is given; or, with \fB\-\-before\fR or \fB\-\-after\fR, directly above
+the named task or directly below its payload, under whatever heading
+that task sits.\& An unknown section or a missing file is an error;
+no file is ever created.\& \fB\-p A\fR adds the `(A)` priority flag.\& The task
+is stamped with a new identifier (see TASK IDENTIFIERS) unless its text
+already carries one, such as one carried over from an existing
+numbering scheme (`tm add "Fix the parser id:z0114"`); a supplied
+identifier that already occurs in any task file is an error.\&
+.PP
+.RE
+\fBid\fR [\-\-tasks\-dir \fIDIR\fR] [\fIfile\fR.\&.\&.\&]
+.RS 4
+Stamp a new identifier on every pending task that lacks one, in
+\fIactive.\&tm.\&md\fR and \fIfuture.\&tm.\&md\fR or in the files given.\& Completed
+tasks are never changed.\& Also reports, on standard error, any
+identifier carried by more than one task in any task file.\&
 .PP
 .RE
 \fBdone\fR \fI<hash\-or\-pattern>\fR [\-\-git [\fIREV\fR]] [\-\-file \fIFILE\fR] [\-\-tasks\-dir \fIDIR\fR]
@@ -74,11 +103,12 @@ labeled fields, adding `git:<sha>` with \fB\-\-git\fR.\& Only pending tasks are
 candidates; a match that is already completed is reported as such.\&
 .PP
 .RE
-\fBmove\fR \fI<hash\-or\-pattern>\fR [\-\-from \fIFILE\fR] [\-\-to \fIFILE\fR] [\-\-section \fISECTION\fR] [\-\-tasks\-dir \fIDIR\fR]
+\fBmove\fR \fI<hash\-or\-pattern>\fR [\-\-from \fIFILE\fR] [\-\-to \fIFILE\fR] [\-\-section \fISECTION\fR | \-\-before \fITASK\fR | \-\-after \fITASK\fR] [\-\-tasks\-dir \fIDIR\fR]
 .RS 4
 Move a task and its payload from one file to another (by default from
-\fIfuture.\&tm.\&md\fR to \fIactive.\&tm.\&md\fR), or to another section of the same
-file, placed as for \fBadd\fR.\& The destination is written before the task
+\fIfuture.\&tm.\&md\fR to \fIactive.\&tm.\&md\fR), or to another place in the same
+file, placed as for \fBadd\fR; with \fB\-\-before\fR or \fB\-\-after\fR in one file,
+this reorders the queue.\& The destination is written before the task
 is removed from the source, so an interrupted move leaves a duplicate,
 never a loss.\& The destination must exist.\&
 .PP
@@ -104,9 +134,29 @@ the 2 newest or its most recent \fBCompleted\fR task is dated within the
 last 14 days.\&
 .PP
 .RE
+\fBcheck\-shas\fR [\-\-branch \fIREF\fR] [\-\-tasks\-dir \fIDIR\fR]
+.RS 4
+Report each `git:<sha>` citation in any task file, the archive
+included, that does not name a commit in the repository holding the
+tasks directory, as \fIfile\fR:\fIline\fR: git:\fIsha\fR \fIreason\fR.\& With \fB\-\-branch\fR,
+also report commits not reachable from \fIREF\fR, such as the commits of a
+feature branch that was squash\-merged.\& Exits 1 when it reports
+anything.\&
+.PP
+.RE
+\fBremap\fR \fIOLD\fR \fINEW\fR [\fIOLD\fR \fINEW\fR.\&.\&.\&] [\-\-tasks\-dir \fIDIR\fR]
+.RS 4
+Replace every citation of commit \fIOLD\fR \-\- any abbreviation of it, such
+as `git:a1b2c3d` for a full \fIOLD\fR \-\- with `git:`\fINEW\fR, in every task
+file, the archive and completed tasks included.\& Each \fINEW\fR must name a
+commit.\& Prints, per pair, how many citations changed in how many
+files, which can go in the message of the task commit that records the
+remapping.\&
+.PP
+.RE
 \fBvalidate\fR [\-\-fix] [file.\&.\&.\&]
 .RS 4
-Validate taskmark file(s) for SPEC\-TASKMARK\-04 compliance.\& If no \fIfile\fR
+Validate taskmark file(s) for SPEC\-TASKMARK\-05 compliance.\& If no \fIfile\fR
 is given, defaults to the configured active file.\& If \fB\-\-fix\fR is given,
 automatically repairs common formatting errors (over\-indented bullet
 continuations and sub\-lists, wrapped labeled fields, missing blank lines
@@ -114,6 +164,16 @@ after labeled fields, prose directly beneath a task or payload, hard
 tabs, leading frontmatter blocks from pre\-0.\&4 files, and top\-level dash
 bullets converted to '\&*'\&).\& The file'\&s newline style is preserved.\& Exits 0 on success (or successful
 repair), 1 on validation failure or file error.\&
+.PP
+Beyond the rules of the specification, prints non\-fatal `[WARN]` lines
+that never change the exit status: a \fBCreated\fR, \fBDue\fR, or \fBCompleted\fR
+field whose value is not the registered date format; a `**Key:**`
+inside a field'\&s value, which is read as text and is usually a second
+field written on the same line; and an identifier carried by two tasks
+among the files given.\& In a completed task only the \fBCompleted\fR field
+is checked: the rest of its text is a record.\& Duplicate identifiers are
+looked for only among the files given; \fBid\fR checks every task file.\& Output is coloured only when standard output is
+a terminal and the \fBNO_COLOR\fR environment variable is unset or empty.\&
 .PP
 .RE
 \fBindent\fR [info]
@@ -154,6 +214,12 @@ With \fBlist\fR: output both pending and completed tasks.\& Completed tasks are
 marked with `[x]`.\&
 .PP
 .RE
+\fB\-\-not\fR \fITAG\fR
+.RS 4
+With \fBlist\fR and \fBnext\fR: leave out tasks whose line carries \fITAG\fR
+(e.\&g.\& `\-\-not @review`).\& May be repeated.\&
+.PP
+.RE
 \fB\-p\fR, \fB\-\-priority\fR \fIPRI\fR
 .RS 4
 With \fBadd\fR: assign a priority flag `(A)`\-`(Z)` to the task.\&
@@ -168,6 +234,19 @@ content the task is appended to.\& Must exist.\&
 \fB\-\-file\fR \fIFILE\fR
 .RS 4
 Target file to operate on.\& Defaults to the configured active file.\&
+.PP
+.RE
+\fB\-\-before\fR \fITASK\fR, \fB\-\-after\fR \fITASK\fR
+.RS 4
+With \fBadd\fR and \fBmove\fR: place the task directly above \fITASK\fR, or directly
+below \fITASK\fR'\&s payload.\& \fITASK\fR is a handle or pattern, resolved in the
+destination file as for \fBdone\fR.\& Not combined with \fB\-\-section\fR.\&
+.PP
+.RE
+\fB\-\-branch\fR \fIREF\fR
+.RS 4
+With \fBcheck\-shas\fR: also report citations of commits not reachable
+from \fIREF\fR.\&
 .PP
 .RE
 \fB\-\-from\fR \fIFILE\fR
@@ -239,17 +318,48 @@ its upstream to \fIorigin\fR, or to the only remote.\&
 Show help for the command.\&
 .PP
 .RE
+.SH TASK IDENTIFIERS
+A task may carry an identifier: a word on its task line made of `id:` and
+four or more lowercase letters and digits, e.\&g.\& `id:k7q2x`.\& It never
+changes and is never reused, and it stays with the task when the task is
+edited, moved, completed, swept, and archived, so it can be cited from
+another task, a commit message, or a review note.\&
+.PP
+\fBadd\fR and \fBid\fR assign identifiers.\& Each is five characters drawn at random
+from \fI/dev/urandom\fR (digits and lowercase letters without i, l, o, and u),
+and is redrawn if it already occurs anywhere in \fIactive.\&tm.\&md\fR,
+\fIfuture.\&tm.\&md\fR, \fIcompleted.\&tm.\&md\fR, or the archive.\& There is no counter and
+no index file.\& An identifier written by hand, or carried over from an
+existing scheme (`Z\-0114` as `id:z0114`), is equally valid.\&
+.PP
+A task names the tasks that must be completed before it can start in a
+\fBDepends\fR field, which \fBnext\fR reads:
+.PP
+.nf
+.RS 4
+\- [ ] +api Add rate limiting id:k7q2x
+    > **Depends:** id:m3x8a
+.fi
+.RE
+.PP
+Copying a task copies its identifier.\& \fBid\fR and \fBvalidate\fR warn when two
+tasks carry the same one; give one of them a new identifier by hand.\&
+.PP
 .SH TASK HANDLES
-Task files carry no IDs or numbering.\& Instead \fBtm\fR derives a deterministic
-8\-hex\-digit hash from each task'\&s summary (the task line minus its checkbox
-and outer whitespace, so it survives \fBtm done\fR), and shows its shortest
-prefix of at least 4 digits that is unique within the file as the task'\&s
-\fIhandle\fR, e.\&g.\& `[f4a1]`.\& Editing a task'\&s text changes its handle.\&
+\fBlist\fR shows a \fIhandle\fR for each task, e.\&g.\& `[k7q2x]`.\& It is the task'\&s
+identifier when the task has one that no other task of the file shares.\&
+Otherwise \fBtm\fR derives a deterministic 8\-hex\-digit hash from the task'\&s
+summary (the task line minus its checkbox and outer whitespace, so it
+survives \fBtm done\fR) and shows its shortest prefix of at least 4 digits that
+is unique within the file, e.\&g.\& `[f4a1]`.\& A hash handle is never written to
+a file, and editing the task'\&s text changes it.\&
 .PP
 \fBdone\fR and \fBmove\fR accept:
 .PD 0
 .IP \(bu 4
-A handle, or any longer prefix of the same hash, with or without
+An identifier, with or without its `id:` prefix.\&
+.IP \(bu 4
+A hash handle, or any longer prefix of the same hash, with or without
 brackets.\& A prefix shared by several tasks is rejected, listing each
 candidate with its own unique handle.\&
 .IP \(bu 4
@@ -260,7 +370,7 @@ matching several tasks is likewise rejected with the candidates listed.\&
 Two tasks with identical summaries share a hash; make their text differ to
 address them separately.\&
 .PP
-For \fBadd\fR, \fBdone\fR, \fBmove\fR, and \fBlist\fR, `\-\-` ends the options, so task text or
+For \fBadd\fR, \fBdone\fR, \fBmove\fR, \fBlist\fR, and \fBnext\fR, `\-\-` ends the options, so task text or
 a pattern may begin with '\&\-'\&: `tm add \-\- "\-v flag handling"`.\&
 .PP
 Task files may be symlinks: \fBtm\fR writes through a link to its target and
@@ -290,7 +400,7 @@ never hand\-authored.\&
 .RE
 \fI<tasks\-dir>/.\&tm.\&lock\fR
 .RS 4
-Transient lock directory held by \fBadd\fR, \fBdone\fR, \fBmove\fR, \fBsweep\fR,
+Transient lock directory held by \fBadd\fR, \fBid\fR, \fBdone\fR, \fBmove\fR, \fBremap\fR, \fBsweep\fR,
 \fBarchive\fR, and \fBvalidate \-\-fix\fR for the duration of their read\-modify\-write,
 so concurrent \fBtm\fR runs wait for each other instead of losing updates.\&
 A stale lock left by a killed process may be removed by hand.\&
@@ -332,5 +442,5 @@ resolution order.\&
 .SH SEE ALSO
 \fIdoc/taskmark_spec.\&md\fR
 .RS 4
-The SPEC\-TASKMARK\-04 specification implemented by this tool.\&
+The SPEC\-TASKMARK\-05 specification implemented by this tool.\&
 .RE

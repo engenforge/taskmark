@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
 -- tests/tmconfig_test.lua — unit + end-to-end tests for tmconfig.lua
--- (SPEC-TASKMARK-04 §9 configuration resolution).
+-- (SPEC-TASKMARK-05 §9 configuration resolution).
 --
 -- Self-contained runner (mirroring tests/tmsweep_test.lua / tminit_test.lua
 -- style).

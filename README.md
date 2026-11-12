@@ -1,6 +1,6 @@
 # Taskmark (`tm`)
 
-**Taskmark** is a deterministic, multi-line, plain-text task specification (**SPEC-TASKMARK-04**) and CLI utility (`tm`) designed to work with any text editor and automated parsing tools.
+**Taskmark** is a deterministic, multi-line, plain-text task specification (**SPEC-TASKMARK-05**) and CLI utility (`tm`) designed to work with any text editor and automated parsing tools.
 
 It replaces the single-line constraints of formats like `todo.txt` while maintaining strict **CommonMark** compatibility, pure Markdown documents without YAML frontmatter friction, and predictable 4-space payload indentation rules.
 
@@ -9,7 +9,7 @@ It replaces the single-line constraints of formats like `todo.txt` while maintai
 ## Table of Contents
 
 - [Features](#features)
-- [Specification Summary (SPEC-TASKMARK-04)](#specification-summary-spec-taskmark-04)
+- [Specification Summary (SPEC-TASKMARK-05)](#specification-summary-spec-taskmark-05)
   - [Directory Architecture](#directory-architecture)
   - [Pure CommonMark Structure](#pure-commonmark-structure)
   - [Task & Context Indentation](#task--context-indentation)
@@ -41,7 +41,7 @@ It replaces the single-line constraints of formats like `todo.txt` while maintai
 
 ---
 
-## Specification Summary (SPEC-TASKMARK-04)
+## Specification Summary (SPEC-TASKMARK-05)
 
 Read the full specification at [`doc/taskmark_spec.md`](doc/taskmark_spec.md).
 
@@ -62,7 +62,7 @@ Taskmark task management is self-contained within `.tasks/` in each repository r
 
 ### Pure CommonMark Structure
 
-In SPEC-TASKMARK-04, task files start immediately on line 1 with Markdown headings or top-level content. YAML frontmatter (`---`) is eliminated from `.tm.md` files; static project configuration is maintained externally in `.taskmarkrc`.
+Since SPEC-TASKMARK-04, task files start immediately on line 1 with Markdown headings or top-level content. YAML frontmatter (`---`) is eliminated from `.tm.md` files; static project configuration is maintained externally in `.taskmarkrc`.
 
 ```markdown
 # Current Sprint
@@ -95,12 +95,13 @@ Optional conventions adapted from `todo.txt`, layered onto the existing task/pay
 
 - **Priority:** single-letter flag right after the checkbox — `- [ ] (A) Fix the deployment pipeline`.
 - **Project / context tags:** plain `+project` / `@context` words anywhere in the description — `+api @backend`.
+- **Stable Task Identifiers & Dependencies:** `tm add` stamps each task with a short random identifier on its line (`id:k7q2x`) that never changes and is never reused; a `> **Depends:** id:k7q2x` field names the tasks that must be completed first, and `tm next` picks the first task that is ready.
 - **Created / due dates:** labeled payload fields — `> **Created:** 2026-08-01`, `> **Due:** 2026-09-15`.
 
 ### Task Lifecycle
 
-1. **Session Start:** Read `.tasks/active.tm.md` or inspect tasks compactly with `tm list`.
-2. **Task Creation:** Add new work with `tm add "Task description" -p A` (directly under the first heading, or `--section <name>`).
+1. **Session Start:** Run `tm next` for the task to start — the first pending one with no unmet dependency, a priority flag taking precedence over position — or inspect all tasks compactly with `tm list`.
+2. **Task Creation:** Add new work with `tm add "Task description" -p A` (directly under the first heading, or `--section <name>`). The task is stamped with an identifier; `tm id` stamps tasks written by hand.
 3. **Task Promotion:** Promote planned items from backlog to active with `tm move <handle>` (defaults from `future.tm.md` to `active.tm.md`).
 4. **Task Completion:**
    - Commit code changes to git, if any.
@@ -156,13 +157,17 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 |---|---|
 | `tm init [--orphan [BRANCH]]` | Bootstrap taskmark folder and starter files (with `--orphan`, initializes an isolated orphan Git branch mounted as a worktree). |
 | `tm sync [-m MSG] [-p]` | Commit modified taskmark files in the tasks directory to the orphan branch (`-p` pushes to remote). |
-| `tm list [--pending\|--all]` | One line per task — its handle and summary (`[f4a1] (A) Task text`), no payloads. Handles are the shortest unique hash prefix of at least 4 hex digits. |
-| `tm add <text> [-p PRI] [--section S]` | Add a task to an existing file, under the first heading or the named section. |
+| `tm list [--pending\|--all] [--not TAG] [TAG...]` | One line per task — its handle and summary (`[k7q2x] (A) Task text id:k7q2x`), no payloads. The handle is the task's identifier, or without one the shortest unique hash prefix of at least 4 hex digits. `+project` / `@context` arguments keep only tasks carrying every tag; `--not TAG` drops those carrying it. |
+| `tm next [--not TAG] [TAG...]` | The task to start: the first pending task in the active file with no unmet `Depends`, flagged priorities first; filtered like `tm list`. |
+| `tm add <text> [-p PRI] [--section S \| --before T \| --after T]` | Add a task to an existing file, under the first heading or the named section, or directly before or after task `T`, stamped with a new identifier unless the text already carries an unused one (`id:z0114`). |
+| `tm id [file...]` | Stamp an identifier on every pending task that lacks one (default: the active and future files) and report any identifier carried by two tasks. |
 | `tm done <handle\|pattern> [--git [REV]]` | Mark a pending task completed, stamping the local date and optionally `git:<sha>` of REV (default `HEAD`). |
-| `tm move <handle\|pattern> [--from F] [--to T] [--section S]` | Move a task between files or sections (default: `future.tm.md` to `active.tm.md`); destination written first. |
+| `tm move <handle\|pattern> [--from F] [--to T] [--section S \| --before T \| --after T]` | Move a task between files or sections, or next to another task (default: `future.tm.md` to `active.tm.md`); destination written first. |
+| `tm check-shas [--branch REF]` | Report `git:<sha>` citations in any task file that no longer name a commit (or, with `--branch`, are not reachable from `REF`); exits 1 if any. |
+| `tm remap OLD NEW [OLD NEW...]` | After a squash or rebase, replace citations of each old commit with its new one in every task file, the archive included. |
 | `tm sweep [--sprint <id>]` | Move every completed task (with its payload) from `active.tm.md` to `completed.tm.md`, newest first, under `## YYYY-MM` (or `## Sprint <id>`). |
 | `tm archive` | Move sections aged out of `completed.tm.md` into `archive/<YYYY>/<YYYY-MM>.tm.md`. |
-| `tm validate [file...]` | Validate task file(s) against SPEC-TASKMARK-04 (defaults to the configured active file). |
+| `tm validate [file...]` | Validate task file(s) against SPEC-TASKMARK-05 (defaults to the configured active file). Also prints non-fatal `[WARN]` lines: a malformed date, two fields on one line (not checked in completed tasks), an identifier carried by two tasks among the files given. Output is coloured only on a terminal, and never when `NO_COLOR` is set. |
 | `tm indent [info]` | Prefix stdin with the four-space payload indent, optionally wrapped in a fenced code block. |
 | `tm dedent [--fence]` | Remove the four-space payload indent from stdin. |
 | `tm version` | Print current version string. |
@@ -197,11 +202,27 @@ tm sync -m "tasks: update sprint backlog"
 # List pending tasks, one line each, with their handles
 tm list
 
-# Add a high-priority task to the active sprint
+# List pending +api tasks that are not awaiting review
+tm list +api --not @review
+
+# Show the task to start next
+tm next
+
+# Add a high-priority task to the active sprint (prints its new identifier)
 tm add "Implement socket timeout handling" -p A
 
+# Give hand-written tasks an identifier
+tm id
+
+# Add a task directly before the task it blocks
+tm add "Fix the lexer first" --before k7q2x
+
+# After squash-merging a branch, repoint cited commits and check the result
+tm remap a1b2c3d 9f8e7d6
+tm check-shas --branch main
+
 # Mark a task completed with the current commit's SHA (or a named commit)
-tm done f4a1 --git
+tm done k7q2x --git
 tm done "socket timeout" --git=abc1234
 
 # Promote task from backlog (future.tm.md) to active sprint (active.tm.md)
@@ -349,7 +370,7 @@ lua tests/commonmark_test.lua
 ├── Makefile              # Build, test, install, and packaging targets
 ├── VERSION               # Semantic version string (the only copy; see Cutting a Release)
 ├── doc/
-│   ├── taskmark_spec.md  # SPEC-TASKMARK-04 Specification document
+│   ├── taskmark_spec.md  # SPEC-TASKMARK-05 Specification document
 │   ├── tm.1.scd          # scdoc source for tm(1) man page
 │   └── tm.1              # Formatted roff man page
 ├── scripts/
@@ -362,7 +383,7 @@ lua tests/commonmark_test.lua
 │   ├── tmsweep.lua       # CLI runner for the sweep and archive subcommands
 │   ├── tmsweep_core.lua  # Sweep, blank-line normalization, and archive-aging logic
 │   ├── tmfilter.lua      # indent/dedent payload filters
-│   ├── tmval.lua         # SPEC-TASKMARK-04 validation engine (rules V3-V13)
+│   ├── tmval.lua         # SPEC-TASKMARK-05 validation engine (rules V3-V13)
 │   └── tmconfig.lua      # .taskmarkrc / global-config / --tasks-dir path resolution (§9)
 ├── tests/
 │   ├── fixtures/         # Pass/fail Markdown test fixtures for the validator

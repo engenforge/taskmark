@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- tmconfig — SPEC-TASKMARK-04 §9 configuration resolution.
+-- tmconfig — SPEC-TASKMARK-05 §9 configuration resolution.
 --
 -- Resolves the on-disk paths tm's subcommands operate on (the .tasks/
 -- directory itself, active.tm.md/future.tm.md/completed.tm.md, the archive/

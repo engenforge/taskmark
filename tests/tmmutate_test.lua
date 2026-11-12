@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
 -- tests/tmmutate_test.lua — unit and CLI tests for tmmutate.lua
--- (SPEC-TASKMARK-04 AI & CLI ergonomics: atomic task mutations, compact
+-- (SPEC-TASKMARK-05 AI & CLI ergonomics: atomic task mutations, compact
 -- listings, and ephemeral hashes).
 
 -- Run hermetically (see tests/tmsync_test.lua): the --git cases make
@@ -358,9 +358,10 @@ do
     local p = io.popen(string.format("%s list --tasks-dir %s", tm_cmd, tmio.shell_quote(tasks_dir)))
     local list_out = p:read("*a")
     p:close()
-    check("cli", "tm list outputs task handle", list_out:match("^%[%x%x%x%x%] %(A%) First added task") ~= nil)
+    check("cli", "tm list outputs task handle", list_out:match("^%[[0-9a-z]+%] %(A%) First added task") ~= nil)
 
-    local handle = list_out:match("^%[(%x%x%x%x)%]")
+    -- tm add stamps an identifier, and that is the handle tm list prints.
+    local handle = list_out:match("^%[([0-9a-z]+)%]")
 
     -- 3. tm done <handle>, with --git HEAD resolved in a scratch repository
     -- (never this source tree, which may be an unpacked tarball).
@@ -575,7 +576,7 @@ do
     write(active, "# Current Sprint\n\n## Alpha\n\n- [ ] a\n\n## Beta\n\n- [ ] b\n")
     tm_in(tmp, "add 'Top level'")
     check("add", "without --section, lands directly under the first heading",
-        read(active) == "# Current Sprint\n\n- [ ] Top level\n\n## Alpha\n\n- [ ] a\n\n## Beta\n\n- [ ] b\n", read(active))
+        read(active):gsub(" id:[0-9a-z]+", "") == "# Current Sprint\n\n- [ ] Top level\n\n## Alpha\n\n- [ ] a\n\n## Beta\n\n- [ ] b\n", read(active))
 
     out, code = tm_in(tmp, "move Future --to .tasks/actve.tm.md")
     check("move", "missing destination is an error, no file created",
@@ -653,7 +654,7 @@ do
     tmio.mkdir_p(tmp .. "/.tasks")
     write(tmp .. "/.tasks/active.tm.md", "# S\n")
     local out, code = tm_in(tmp, "add -p A -- '-v flag handling'")
-    check("add", "text after -- may start with '-'", code == 0 and read(tmp .. "/.tasks/active.tm.md") == "# S\n\n- [ ] (A) -v flag handling\n", out)
+    check("add", "text after -- may start with '-'", code == 0 and read(tmp .. "/.tasks/active.tm.md"):gsub(" id:[0-9a-z]+", "") == "# S\n\n- [ ] (A) -v flag handling\n", out)
     out, code = tm_in(tmp, "done -- -v")
     check("done", "pattern after -- may start with '-'", code == 0 and (read(tmp .. "/.tasks/active.tm.md") or ""):find("- [x] (A) -v flag", 1, true) ~= nil, out)
     cleanup_dir(tmp)
@@ -713,6 +714,276 @@ do
 
     out, err = list("")
     check("list", "pending tasks: no note", err == "", err)
+    cleanup_dir(tmp)
+end
+
+-- ── Identifiers (§4.3.3): stamping, handles, tm id ─────────────────────────
+
+local function sequence(...)
+    local ids, n = { ... }, 0
+    return function() n = n + 1; return ids[n] end
+end
+
+do
+    local tmp = make_temp_dir()
+    local active, future = tmp .. "/active.tm.md", tmp .. "/future.tm.md"
+    write(active, "# Current Sprint\n\n- [ ] Existing task id:aaaaa\n")
+    write(future, "# Planned Work\n\n- [ ] Later task\n    > **Depends:** id:bbbbb\n")
+
+    local ok, res, handles = tmmutate.add({ tasks_dir = tmp, text = "New task", priority = "B",
+        generate = sequence("aaaaa", "bbbbb", "ccccc") })
+    local content = read(active)
+    check("id", "add stamps an identifier unused in any task file",
+        ok and content:find("- [ ] (B) New task id:ccccc\n", 1, true) ~= nil, content)
+    check("id", "add reports the identifier as the handle", ok and handles[res] == "ccccc")
+
+    tmmutate.add({ tasks_dir = tmp, text = "Hand numbered id:z0114", generate = sequence("ddddd") })
+    check("id", "add keeps an identifier already in the text",
+        read(active):find("- [ ] Hand numbered id:z0114\n", 1, true) ~= nil)
+
+    local dup_ok, dup_why = tmmutate.add({ tasks_dir = tmp, text = "Reuses a cited one id:bbbbb" })
+    check("id", "add refuses a supplied identifier that is already in use",
+        dup_ok == false and tostring(dup_why):find("id:bbbbb is already in use", 1, true) ~= nil
+        and not read(active):find("Reuses", 1, true), dup_why)
+    check("id", "a supplied identifier that only extends a used one is accepted",
+        tmmutate.add({ tasks_dir = tmp, text = "Longer id:z01140" }) == true)
+
+    local ok_real = tmmutate.add({ tasks_dir = tmp, text = "Random draw" })
+    check("id", "add draws a five-character identifier by default",
+        ok_real and read(active):match("%- %[ %] Random draw id:[0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z]\n") ~= nil)
+
+    local failed_ok, why = tmmutate.add({ tasks_dir = tmp, text = "No entropy",
+        generate = function() return nil, "no entropy" end })
+    check("id", "add fails, and writes nothing, when no identifier can be drawn",
+        failed_ok == false and tostring(why):find("no entropy", 1, true) ~= nil
+        and not read(active):find("No entropy", 1, true))
+    cleanup_dir(tmp)
+end
+
+do
+    local lines = tmscan.lines_of("# S\n\n- [ ] First id:k7q2x\n\n- [ ] Second\n\n- [ ] Twin id:dup01\n\n- [ ] Twin two id:dup01\n")
+    local tasks = tmscan.tasks(lines)
+    local handles = tmmutate.handles(tasks)
+    check("id", "a task's identifier is its handle", handles[tasks[1]] == "k7q2x")
+    check("id", "a task without one keeps its hash handle", handles[tasks[2]] == tasks[2].hash:sub(1, #handles[tasks[2]]))
+    check("id", "a duplicated identifier falls back to hash handles",
+        handles[tasks[3]] ~= "dup01" and handles[tasks[3]] ~= handles[tasks[4]])
+    check("id", "find_task by identifier", tmmutate.find_task(tasks, "k7q2x") == tasks[1])
+    check("id", "find_task by id:-prefixed identifier", tmmutate.find_task(tasks, "id:k7q2x") == tasks[1])
+    local none, err, cands = tmmutate.find_task(tasks, "dup01")
+    check("id", "a duplicated identifier is ambiguous", none == nil and err == "ambiguous_hash" and #cands == 2)
+    local listed = tmmutate.format_list(lines)
+    check("id", "list shows the identifier as the handle", listed[1] == "[k7q2x] First id:k7q2x", listed[1])
+end
+
+do
+    local tmp = make_temp_dir()
+    local active, future = tmp .. "/active.tm.md", tmp .. "/future.tm.md"
+    write(active, "# S\n\n- [ ] One\n    > **Notes:** detail\n\n- [ ] Two id:aaaaa\n\n- [x] Three\n    > **Completed:** 2026-11-01\n")
+    write(future, "# P\n\n- [ ] (A) Four\n")
+    write(tmp .. "/completed.tm.md", "# C\n\n- [x] Old\n    > **Completed:** 2026-10-01\n")
+
+    local ok, stamped = tmmutate.stamp({ tasks_dir = tmp, generate = sequence("aaaaa", "bbbbb", "ccccc") })
+    check("stamp", "stamps each pending task that lacks an identifier",
+        ok and #stamped == 2 and stamped[1].id == "bbbbb" and stamped[2].id == "ccccc")
+    check("stamp", "appends to the task line and leaves the payload alone",
+        read(active):find("- [ ] One id:bbbbb\n    > **Notes:** detail\n", 1, true) ~= nil, read(active))
+    check("stamp", "keeps the priority flag and covers future.tm.md",
+        read(future):find("- [ ] (A) Four id:ccccc\n", 1, true) ~= nil)
+    check("stamp", "leaves identified and completed tasks unchanged",
+        read(active):find("- [ ] Two id:aaaaa\n", 1, true) ~= nil and read(active):find("- [x] Three\n", 1, true) ~= nil
+        and read(tmp .. "/completed.tm.md"):find("- [x] Old\n", 1, true) ~= nil)
+    check("stamp", "stamped files pass tmval",
+        #tmval.validate_lines(tmscan.lines_of(read(active))) == 0)
+
+    local ok2, again = tmmutate.stamp({ tasks_dir = tmp, generate = sequence("ddddd") })
+    check("stamp", "a second run stamps nothing", ok2 and #again == 0)
+
+    write(future, "# P\n\n- [ ] (A) Four id:ccccc\n\n- [ ] Copy id:aaaaa\n")
+    local _, _, dups = tmmutate.stamp({ tasks_dir = tmp })
+    check("stamp", "reports identifiers carried by two tasks", #dups == 1 and dups[1].id == "aaaaa")
+    cleanup_dir(tmp)
+end
+
+-- ── Tag filters and tm next (§5.1) ─────────────────────────────────────────
+
+do
+    local tmp = make_temp_dir()
+    local active = tmp .. "/active.tm.md"
+    write(active, [[# Current Sprint
+
+- [ ] +api @backend Blocked by parser id:aaaaa
+    > **Depends:** id:bbbbb
+
+- [ ] @review +api Awaiting review id:ccccc
+
+- [ ] +parser @backend Write the parser id:bbbbb
+
+- [ ] Follow-up on archived work id:ddddd
+    > **Depends:** id:eeeee
+
+- [ ] (B) +api @cli Urgent flag id:fffff
+
+- [ ] Cites a missing task id:ggggg
+    > **Depends:** id:zzzzz
+
+- [x] +api Finished id:hhhhh
+    > **Completed:** 2026-11-01
+]])
+    write(tmp .. "/completed.tm.md", "# C\n\n- [x] Archived work id:eeeee\n    > **Completed:** 2026-10-01\n")
+
+    local function ids(items)
+        local out = {}
+        for _, item in ipairs(items) do out[#out + 1] = item:match("^%[(%w+)%]") end
+        return table.concat(out, " ")
+    end
+
+    check("filter", "a +project tag selects tasks carrying it",
+        ids(tmmutate.format_list(active, { tags = { "+api" } })) == "aaaaa ccccc fffff")
+    check("filter", "several tags must all match",
+        ids(tmmutate.format_list(active, { tags = { "+api", "@backend" } })) == "aaaaa")
+    check("filter", "tags match anywhere on the line, as whole words",
+        ids(tmmutate.format_list(active, { tags = { "@review" } })) == "ccccc"
+        and ids(tmmutate.format_list(active, { tags = { "+ap" } })) == "")
+    check("filter", "--not excludes a tag",
+        ids(tmmutate.format_list(active, { tags = { "+api" }, not_tags = { "@review" } })) == "aaaaa fffff")
+    check("filter", "filters combine with --all",
+        ids(tmmutate.format_list(active, { filter = "all", tags = { "+api" }, not_tags = { "@backend" } })) == "ccccc fffff hhhhh")
+
+    local task, _, warnings = tmmutate.next({ tasks_dir = tmp })
+    check("next", "a priority flag is taken ahead of position", task and task.summary:find("id:fffff", 1, true) ~= nil)
+    check("next", "a dependency on an unknown identifier is reported",
+        #warnings == 1 and warnings[1]:find("id:zzzzz", 1, true) ~= nil, warnings[1])
+
+    task = tmmutate.next({ tasks_dir = tmp, not_tags = { "@cli" } })
+    check("next", "otherwise the first task in file order with no unmet dependency",
+        task and task.summary:find("id:ccccc", 1, true) ~= nil, task and task.summary)
+
+    task = tmmutate.next({ tasks_dir = tmp, not_tags = { "@cli", "@review" } })
+    check("next", "a pending dependency blocks; the dependency itself is ready",
+        task and task.summary:find("id:bbbbb", 1, true) ~= nil, task and task.summary)
+
+    task = tmmutate.next({ tasks_dir = tmp, not_tags = { "@cli", "@review", "@backend" } })
+    check("next", "a dependency completed in another file is met",
+        task and task.summary:find("id:ddddd", 1, true) ~= nil, task and task.summary)
+
+    task = tmmutate.next({ tasks_dir = tmp, tags = { "+api", "@backend" } })
+    check("next", "nothing ready: nil", task == nil)
+
+    tmmutate.done({ tasks_dir = tmp, query = "bbbbb", date = "2026-11-12" })
+    task = tmmutate.next({ tasks_dir = tmp, tags = { "+api", "@backend" } })
+    check("next", "completing the dependency unblocks the dependant",
+        task and task.summary:find("id:aaaaa", 1, true) ~= nil)
+    cleanup_dir(tmp)
+end
+
+-- ── CLI: identifiers, filters, next ────────────────────────────────────────
+
+do
+    local tmp = make_temp_dir()
+    tmio.mkdir_p(tmp .. "/.tasks")
+    write(tmp .. "/.tasks/active.tm.md", "# Current Sprint\n\n- [ ] +api @review First\n\n- [ ] +api Second\n")
+    write(tmp .. "/.tasks/future.tm.md", "# Planned Work\n\n- [ ] Later\n")
+
+    local out, code = tm_in(tmp, "add 'Third task'")
+    local id = out:match("^Added: %[([0-9a-z]+)%] Third task id:")
+    check("cli", "add prints the new identifier as the handle",
+        code == 0 and id and #id == 5 and out:find("id:" .. id, 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "id")
+    local _, stamped = out:gsub("Stamped: %[[0-9a-z]+%]", "")
+    check("cli", "id stamps pending tasks in active and future", code == 0 and stamped == 3, out)
+    check("cli", "id leaves every pending task identified", (function()
+        for _, f in ipairs({ "active", "future" }) do
+            for line in read(tmp .. "/.tasks/" .. f .. ".tm.md"):gmatch("[^\n]+") do
+                if line:match("^%- %[ %]") and not line:match(" id:[0-9a-z]+$") then return false end
+            end
+        end
+        return true
+    end)())
+    out, code = tm_in(tmp, "id")
+    check("cli", "id with nothing to stamp says so", code == 0 and out:find("Nothing to stamp", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "list +api")
+    local _, n = out:gsub("\n", "")
+    check("cli", "list filters by tag", code == 0 and n == 2 and not out:find("Third", 1, true), out)
+    out = tm_in(tmp, "list +api --not @review")
+    check("cli", "list --not excludes a tag", out:find("Second", 1, true) ~= nil and not out:find("First", 1, true), out)
+    out = tm_in(tmp, "list @review .tasks/active.tm.md .tasks/future.tm.md")
+    check("cli", "list takes tags and files together",
+        out:find("First", 1, true) ~= nil and out:find("== .tasks/future.tm.md", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "next --not @review")
+    check("cli", "next prints the one task to start", code == 0 and out:match("^%[[0-9a-z]+%] %+api Second id:[0-9a-z]+\n$") ~= nil, out)
+    out, code = tm_in(tmp, "next @nowhere")
+    check("cli", "next with nothing ready: exit 0 and a note", code == 0 and out:find("no task is ready", 1, true) ~= nil, out)
+
+    local second = read(tmp .. "/.tasks/active.tm.md"):match("Second id:([0-9a-z]+)")
+    out, code = tm_in(tmp, "done id:" .. second)
+    check("cli", "done accepts an identifier", code == 0 and out:find("Completed: [" .. second .. "]", 1, true) ~= nil, out)
+
+    write(tmp .. "/.tasks/future.tm.md", "# Planned Work\n\n- [ ] Copy id:" .. second .. "\n")
+    out, code = tm_in(tmp, "id")
+    check("cli", "id warns about an identifier on two tasks",
+        code == 0 and out:find("id:" .. second .. " is carried by 2 tasks", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "help")
+    check("cli", "help lists id and next", out:find("\n  id ", 1, true) ~= nil and out:find("\n  next ", 1, true) ~= nil)
+    cleanup_dir(tmp)
+end
+
+-- ── Placement: --before / --after (§5.1) ──────────────────────────────────
+
+do
+    local tmp = make_temp_dir()
+    tmio.mkdir_p(tmp .. "/.tasks")
+    local active, future = tmp .. "/.tasks/active.tm.md", tmp .. "/.tasks/future.tm.md"
+    local base = "# Current Sprint\n\n## Now\n\n- [ ] First id:aaaaa\n    > **Notes:** keep\n\n- [ ] Second id:bbbbb\n\n## Next\n\n- [ ] Third id:ccccc\n"
+    local function order()
+        local out = {}
+        for line in read(active):gmatch("[^\n]+") do
+            local word = line:match("^%- %[.%] (%S+)") or line:match("^## (%S+)")
+            if word then out[#out + 1] = word end
+        end
+        return table.concat(out, " ")
+    end
+
+    write(active, base)
+    local ok = tmmutate.add({ tasks_dir = tmp .. "/.tasks", text = "Blocker id:ddddd", before = "bbbbb" })
+    check("place", "add --before puts the task directly above the named task",
+        ok and order() == "Now First Blocker Second Next Third", order())
+    check("place", "the payload above stays with its task",
+        read(active):find("First id:aaaaa\n    > **Notes:** keep\n\n- [ ] Blocker", 1, true) ~= nil, read(active))
+
+    ok = tmmutate.add({ tasks_dir = tmp .. "/.tasks", text = "Follow-up id:eeeee", after = "aaaaa" })
+    check("place", "add --after puts the task directly below the named task's payload",
+        ok and order() == "Now First Follow-up Blocker Second Next Third", order())
+    check("place", "result passes tmval", #tmval.validate_lines(tmscan.lines_of(read(active))) == 0)
+
+    ok = tmmutate.add({ tasks_dir = tmp .. "/.tasks", text = "Into next id:fffff", before = "Third" })
+    check("place", "an anchor may be a pattern, and crosses headings", ok and order():find("Next Into Third", 1, true) ~= nil, order())
+
+    local before = read(active)
+    local bad, why = tmmutate.add({ tasks_dir = tmp .. "/.tasks", text = "Lost id:ggggg", before = "nosuch" })
+    check("place", "an unknown anchor is an error and changes nothing", bad == false and why == "not_found" and read(active) == before)
+    bad, why = tmmutate.add({ tasks_dir = tmp .. "/.tasks", text = "Both id:hhhhh", before = "aaaaa", section = "Now" })
+    check("place", "--before with --section is refused", bad == false and tostring(why):find("--section", 1, true) ~= nil, why)
+
+    write(active, base)
+    write(future, "# Planned Work\n\n- [ ] Promote me id:mmmmm\n    > **Notes:** payload\n")
+    ok = tmmutate.move({ tasks_dir = tmp .. "/.tasks", query = "mmmmm", before = "bbbbb" })
+    check("place", "move --before places the moved task above the named one",
+        ok and order() == "Now First Promote Second Next Third" and read(active):find("Promote me id:mmmmm\n    > **Notes:** payload\n", 1, true) ~= nil, order())
+
+    ok = tmmutate.move({ tasks_dir = tmp .. "/.tasks", query = "ccccc", from = active, to = active, after = "aaaaa" })
+    check("place", "move --after within one file reorders", ok and order() == "Now First Third Promote Second Next", order())
+    bad, why = tmmutate.move({ tasks_dir = tmp .. "/.tasks", query = "ccccc", from = active, to = active, after = "ccccc" })
+    check("place", "a task cannot be placed relative to itself", bad == false and tostring(why):find("itself", 1, true) ~= nil, why)
+
+    local out, code = tm_in(tmp, "add 'CLI blocker id:nnnnn' --before bbbbb")
+    check("place", "CLI add --before", code == 0 and order():find("CLI Second", 1, true) ~= nil, out)
+    out, code = tm_in(tmp, "move ccccc --from .tasks/active.tm.md --to .tasks/active.tm.md --after bbbbb")
+    check("place", "CLI move --after", code == 0 and order():find("Second Third", 1, true) ~= nil, out .. order())
     cleanup_dir(tmp)
 end
 

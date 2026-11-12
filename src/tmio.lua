@@ -146,6 +146,18 @@ function M.with_lock(dir, fn, ...)
     return unpack(ret, 2, ret.n)
 end
 
+-- Whether to colour output, given whether the stream is a terminal and the
+-- value of NO_COLOR (https://no-color.org: set and non-empty disables it).
+function M.color_enabled(is_tty, no_color)
+    return is_tty and not (no_color and no_color ~= "") or false
+end
+
+-- Whether standard output should be coloured. Plain Lua cannot isatty, so
+-- this costs one `test -t 1`, which inherits this process's stdout.
+function M.stdout_color()
+    return M.color_enabled(exec_ok("test -t 1"), os.getenv("NO_COLOR"))
+end
+
 function M.die(msg)
     M.release_all_locks()
     io.stderr:write(msg .. "\n")

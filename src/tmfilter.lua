@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- tmfilter — SPEC-TASKMARK-04 §8.1 payload indent/dedent filters. Plain
+-- tmfilter — SPEC-TASKMARK-05 §8.1 payload indent/dedent filters. Plain
 -- stdin-to-stdout filters; no parsing, no state.
 local M = {}
 

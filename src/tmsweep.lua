@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- tmsweep — SPEC-TASKMARK-04 §5.3-§5.5 task-level sweep and archive aging.
+-- tmsweep — SPEC-TASKMARK-05 §5.3-§5.5 task-level sweep and archive aging.
 -- Exposed as the `sweep` and `archive` subcommands of the `tm` tool, and
 -- also runnable directly:
 --   tmsweep [--sweep [--sprint LABEL]] [--archive] [--dry-run]
@@ -14,7 +14,7 @@ local tmscan   = require("tmscan")
 local tmio     = require("tmio")
 
 local USAGE = [=[
-tmsweep — SPEC-TASKMARK-04 §5.3-§5.5 sweep and archive
+tmsweep — SPEC-TASKMARK-05 §5.3-§5.5 sweep and archive
 
 Usage:
   tmsweep [--sweep [--sprint LABEL]] [--archive] [--dry-run]
@@ -44,7 +44,7 @@ Options:
   --archive       Archive aged-out sections from completed.tm.md to archive/
   --dry-run       Report what would move and change nothing
   --tasks-dir     Directory holding the task files (default: .tasks, or
-                  the tasks_dir set in .taskmarkrc -- see SPEC-TASKMARK-04 §9)
+                  the tasks_dir set in .taskmarkrc -- see SPEC-TASKMARK-05 §9)
   -h, --help      Show this help
 ]=]
 
@@ -116,7 +116,7 @@ local function M_run(args)
 
     -- Resolve file paths. A positional active.tm.md (and optional
     -- completed.tm.md) wins; otherwise derive both from --tasks-dir /
-    -- .taskmarkrc / the built-in .tasks default (SPEC-TASKMARK-04 §9).
+    -- .taskmarkrc / the built-in .tasks default (SPEC-TASKMARK-05 §9).
     local cfg = tmconfig.resolve({ tasks_dir = tasks_dir })
     local active_path, completed_path
     if #positionals >= 1 then

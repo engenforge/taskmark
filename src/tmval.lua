@@ -1,7 +1,8 @@
 #!/usr/bin/env lua
--- tm validate — SPEC-TASKMARK-04 §1.5 validator. Checks a document against
--- rules V3 through V14 and nothing else: no warning is fatal, and tag shape
--- or placement is never checked. One subcommand of the `tm` universal
+-- tm validate — SPEC-TASKMARK-05 §1.5 validator. Checks a document against
+-- rules V3 through V14 and nothing else. Beyond those it prints non-fatal
+-- warnings (a malformed date, two fields on one line, an identifier carried
+-- by two tasks); tag shape or placement is never checked. One subcommand of the `tm` universal
 -- taskmark utility; also runnable directly as `lua tmval.lua`.
 -- Usage: tm validate [options] [file...]
 -- If no file is given, defaults to the active file resolved via tmconfig.
@@ -11,10 +12,11 @@ package.path = script_dir .. "/?.lua;" .. script_dir .. "/../src/?.lua;" .. pack
 local tmconfig = require("tmconfig")
 local tmscan   = require("tmscan")
 local tmio     = require("tmio")
+local tmid     = require("tmid")
 
 local function show_help()
     print([[
-tm validate — SPEC-TASKMARK-04 taskmark validator
+tm validate — SPEC-TASKMARK-05 taskmark validator
 
 Usage:
   tm validate [options] [file...]
@@ -28,6 +30,13 @@ Options:
 Exit codes:
   0  All files are spec-compliant (or successfully repaired with --fix)
   1  Validation failed or file error
+
+[WARN] lines never change the exit code: a Created, Due, or Completed value
+that is not the registered date format, a **Key:** inside a field's value
+(read as text, not as a field), and an identifier carried by two tasks
+among the files given (`tm id` checks every task file). In a completed task
+only the Completed field is checked. Output is coloured only on a terminal,
+and never when NO_COLOR is set.
 
 Examples:
   tm validate .tasks/active.tm.md
@@ -109,6 +118,7 @@ local function validate_body(lines, errors)
     local prev_was_label = false
     local prev_kind = nil
     local in_list_item = false
+    local in_task = false
 
     -- V14: frontmatter was removed in SPEC-TASKMARK-04. Report the block
     -- once and skip it, rather than flagging its `---` and `key: value`
@@ -130,7 +140,12 @@ local function validate_body(lines, errors)
         if not raw:match("^%s*$") then
             local lead = raw:match("^[ \t]*")
             if #lead > 0 and raw:sub(1, 4) ~= "    " then
-                add(i, "V7", "payload line's first four columns are not four literal spaces")
+                if in_task then
+                    add(i, "V7", "payload line's first four columns are not four literal spaces")
+                else
+                    add(i, "V7", "indented line outside a task: top-level text starts at column 0, " ..
+                        "including the wrapped line of a prose list item")
+                end
             end
         end
 
@@ -166,14 +181,14 @@ local function validate_body(lines, errors)
 
             if not exempt then
                 -- V8: leading whitespace in payload content.
-                -- SPEC-TASKMARK-04 allows up to 4 spaces of content indent (columns 5-8 total)
+                -- SPEC-TASKMARK-05 allows up to 4 spaces of content indent (columns 5-8 total)
                 -- if and only if continuing an active list item without an intervening blank line.
                 local content_spaces = fields.content:match("^( *)")
                 local num_spaces = content_spaces and #content_spaces or 0
 
                 if num_spaces > 0 then
                     if in_list_item and num_spaces <= 4 and prev_kind ~= "blank" then
-                        -- Allowed list continuation or sub-list under SPEC-TASKMARK-04.
+                        -- Allowed list continuation or sub-list under SPEC-TASKMARK-05.
                     else
                         add(i, "V8", "payload content has further leading whitespace outside a fenced code block")
                         in_list_item = false
@@ -204,7 +219,7 @@ local function validate_body(lines, errors)
                         prev_was_label = true
                         in_list_item = false
                     elseif prev_was_label and fields.content:match("^> (.*)$") and not fields.content:match("^> %s*>") then
-                        -- SPEC-TASKMARK-04 V10: multi-line labeled field continuation
+                        -- SPEC-TASKMARK-05 V10: multi-line labeled field continuation
                         prev_was_label = true
                         in_list_item = false
                     else
@@ -249,6 +264,7 @@ local function validate_body(lines, errors)
 
             in_payload, fence_open, fence_open_line, prev_was_label = false, false, nil, false
             in_list_item = false
+            in_task = kind == "task"
             fence_char, fence_len = nil, nil
 
             if kind == "prose" then
@@ -278,12 +294,72 @@ local function validate_body(lines, errors)
     end
 end
 
--- Validate an array of line strings against SPEC-TASKMARK-04. Returns sorted errors table.
+-- Validate an array of line strings against SPEC-TASKMARK-05. Returns sorted errors table.
 local function validate_lines(lines)
     local errors = {}
     validate_body(lines, errors)
     table.sort(errors, function(a, b) return a.line < b.line end)
     return errors
+end
+
+local DATE = "%d%d%d%d%-%d%d%-%d%d"
+
+local function is_date(s)
+    return s:match("^" .. DATE .. "$") ~= nil and tmscan.parse_iso8601(s) ~= nil
+end
+
+-- What is wrong with the value of a registered date field (§4.4.2), or nil.
+local function date_field_problem(key, value)
+    value = value:gsub("%s+$", "")
+    if key == "Created" or key == "Due" then
+        if not is_date(value) then return key .. ": expected a YYYY-MM-DD date alone, found '" .. value .. "'" end
+    elseif key == "Completed" then
+        local date, rest = value:match("^(%S*)(.*)$")
+        local sha = rest:match("^ git:(%x+)$")
+        if not is_date(date) or not (rest == "" or (sha and #sha >= 7 and #sha <= 40)) then
+            return "Completed: expected YYYY-MM-DD, optionally followed by git:<sha>, found '" .. value .. "'"
+        end
+    end
+    return nil
+end
+
+-- Non-fatal findings in labeled fields (§1.5 permits warnings; none fails
+-- a document): a registered date field whose value is not the registered
+-- format, and a `**Key:**` inside a value, which is nearly always a second
+-- field written on the same line and therefore read as text. Fenced and
+-- freeform payload content, and code spans, are never inspected. Returns { line, msg }.
+local function validate_warnings(lines)
+    local warnings = {}
+    local in_field = false
+    for i, kind, fields, _, task, fence_open in tmscan.iter(lines) do
+        local value
+        -- A completed task is a record (§4.3.3): only the Completed stamp a
+        -- tool just wrote is checked, so old text does not bury new warnings.
+        local record = task and task.done
+        if kind == "payload" and not fence_open then
+            local key, first = fields.content:match("^> %*%*([A-Za-z][A-Za-z0-9_%-]*):%*%* ?(.*)$")
+            if key and record and key ~= "Completed" then
+                in_field = false
+            elseif key then
+                value, in_field = first, not record
+                local problem = date_field_problem(key, first)
+                if problem then warnings[#warnings + 1] = { line = i, msg = problem } end
+            elseif in_field and fields.content:match("^> ") then
+                value = fields.content:sub(3)
+            else
+                in_field = false
+            end
+        else
+            in_field = false
+        end
+        -- A key quoted in a code span is being talked about, not written.
+        local second = value and value:gsub("`[^`]*`", ""):match("%*%*[A-Za-z][A-Za-z0-9_%-]*:%*%*")
+        if second then
+            warnings[#warnings + 1] = { line = i, msg = "value contains '" .. second ..
+                "', which is read as text, not as a field: write one field per line" }
+        end
+    end
+    return warnings
 end
 
 -- Automatically repair common formatting errors in Taskmark documents (V3, V6, V7, V8, V9, V10, V11, V13, V14).
@@ -381,7 +457,7 @@ local function fix_document(lines)
                             in_list_item = false
                             new_lines[#new_lines + 1] = "    " .. content
                         elseif prev_was_label and content:match("^> (.*)$") and not content:match("^> %s*>") then
-                            -- SPEC-TASKMARK-04: Multi-line labeled field continuation
+                            -- SPEC-TASKMARK-05: Multi-line labeled field continuation
                             prev_was_label = true
                             in_list_item = false
                             new_lines[#new_lines + 1] = "    " .. content
@@ -406,7 +482,7 @@ local function fix_document(lines)
 
                         if num_spaces > 0 then
                             if in_list_item and num_spaces <= 4 and prev_kind ~= "blank" then
-                                -- SPEC-TASKMARK-04: Valid sub-list or continuation indent! Keep content.
+                                -- SPEC-TASKMARK-05: Valid sub-list or continuation indent! Keep content.
                             else
                                 content = content:gsub("^[ \t]+", "")
                                 if content:match("^[%-%*%+] ") or content:match("^%d+[.)] ") then
@@ -499,10 +575,18 @@ local function run(args)
         files = { tmconfig.resolve({}).active_path }
     end
 
-    local TERM_RESET  = "\27[0m"
-    local TERM_RED    = "\27[31m"
-    local TERM_GREEN  = "\27[32m"
-    local TERM_YELLOW = "\27[33m"
+    -- Colour only for a person at a terminal: a pipe or a script gets
+    -- plain "[PASS]" / "[FAIL]" it can match without stripping escapes.
+    local color = tmio.stdout_color()
+    local TERM_RESET  = color and "\27[0m" or ""
+    local TERM_RED    = color and "\27[31m" or ""
+    local TERM_GREEN  = color and "\27[32m" or ""
+    local TERM_YELLOW = color and "\27[33m" or ""
+
+    local function warn(file, line, msg)
+        local where = (#files > 1 and file and (file .. ": ") or "") .. (line and ("Line " .. line .. ": ") or "")
+        print(string.format("%s[WARN]%s %s%s", TERM_YELLOW, TERM_RESET, where, msg))
+    end
 
     local total_errors = 0
     local had_file_error = false
@@ -522,9 +606,10 @@ local function run(args)
 
             local lines = tmscan.lines_of(raw_content)
             local errors = validate_lines(lines)
+            for _, w in ipairs(validate_warnings(lines)) do warn(file, w.line, w.msg) end
 
             if #errors == 0 then
-                print(string.format("%s[PASS]%s %s conforms to SPEC-TASKMARK-04.", TERM_GREEN, TERM_RESET, file))
+                print(string.format("%s[PASS]%s %s conforms to SPEC-TASKMARK-05.", TERM_GREEN, TERM_RESET, file))
             elseif fix_mode then
                 local fixed_lines, ok = fix_document(lines)
                 local remaining_errors = validate_lines(fixed_lines)
@@ -534,7 +619,7 @@ local function run(args)
                     local nl = tmscan.detect_newline(raw_content)
                     local ok_w, werr = tmio.write_file_atomic(file, table.concat(fixed_lines, nl) .. nl)
                     if not ok_w then tmio.die(werr) end
-                    print(string.format("%s[FIXED]%s %s (repaired %d error(s); now conforms to SPEC-TASKMARK-04).", TERM_YELLOW, TERM_RESET, file, #errors))
+                    print(string.format("%s[FIXED]%s %s (repaired %d error(s); now conforms to SPEC-TASKMARK-05).", TERM_YELLOW, TERM_RESET, file, #errors))
                 else
                     for _, e in ipairs(remaining_errors) do
                         if #files > 1 then
@@ -567,6 +652,12 @@ local function run(args)
         end
     end
 
+    -- An identifier carried by two tasks, across the files given: the
+    -- result of copying a task, or of two branches drawing the same one.
+    for _, d in ipairs(tmid.duplicates(files)) do
+        warn(nil, nil, tmid.describe_duplicate(d))
+    end
+
     if total_errors > 0 then
         print(string.format("%sValidation failed with %d error(s).%s", TERM_RED, total_errors, TERM_RESET))
         os.exit(1)
@@ -582,4 +673,4 @@ if arg and arg[0] and arg[0]:match("tmval%.lua$") then
     run(arg)
 end
 
-return { run = run, validate_lines = validate_lines, fix_document = fix_document }
+return { run = run, validate_lines = validate_lines, validate_warnings = validate_warnings, fix_document = fix_document }

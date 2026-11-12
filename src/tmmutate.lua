@@ -1,16 +1,20 @@
 #!/usr/bin/env lua
--- tmmutate.lua — task mutations and compact listings addressed by ephemeral
--- handles (SPEC-TASKMARK-04 tooling; handles are never written to a file).
+-- tmmutate.lua — task mutations and compact listings addressed by handle
+-- (SPEC-TASKMARK-05 tooling).
 --
 -- Subcommands:
---   tm list [--pending|--all] [--tasks-dir DIR] [file...]
+--   tm list [--pending|--all] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]
+--   tm next [--not TAG]... [TAG...] [--file FILE] [--tasks-dir DIR]
+--   tm id [--tasks-dir DIR] [file...]
 --   tm done <handle-or-pattern> [--git [REV]] [--file FILE] [--tasks-dir DIR]
 --   tm move <handle-or-pattern> [--from FILE] [--to FILE] [--section SECTION] [--tasks-dir DIR]
 --   tm add <task-text> [-p|--priority PRI] [--section SECTION] [--file FILE] [--tasks-dir DIR]
 --
--- A handle is the shortest prefix (at least 4 hex digits) of a task's
--- tmscan.task_hash that is unique among the tasks of its file; `tm list`
--- prints it, and any longer prefix of the same hash resolves too.
+-- A task's handle is its identifier (§4.3.3, `id:k7q2x` on the task line)
+-- when it has one. Otherwise it is ephemeral and never written to a file:
+-- the shortest prefix (at least 4 hex digits) of the task's
+-- tmscan.task_hash that is unique among the tasks of its file. `tm list`
+-- prints either, and any longer prefix of the same hash resolves too.
 
 local script_dir = arg and arg[0] and arg[0]:match("^(.*)/[^/]+$") or "."
 package.path = script_dir .. "/?.lua;" .. script_dir .. "/../src/?.lua;" .. package.path
@@ -20,6 +24,7 @@ local tmconfig     = require("tmconfig")
 local tmio         = require("tmio")
 local tmsweep_core = require("tmsweep_core")
 local tmgit        = require("tmgit")
+local tmid         = require("tmid")
 
 local M = {}
 
@@ -146,14 +151,42 @@ local function block_end(lines, task)
     return task.line
 end
 
+-- Where a task block goes in `lines`: directly above the task named by
+-- opts.before, directly below the block of the task named by opts.after
+-- (both crossing headings freely), or else as for insertion_point.
+-- Returns the line index to insert before; or nil, reason, detail, where
+-- detail.query is the anchor that failed to resolve.
+local function placement(lines, opts)
+    local anchor = opts.before or opts.after
+    if not anchor then
+        local at, err = insertion_point(lines, opts.section)
+        return at, err
+    end
+    if opts.before and opts.after then return nil, "give --before or --after, not both" end
+    if opts.section then return nil, "--before/--after place the task exactly; drop --section" end
+    local tasks = tmscan.tasks(lines)
+    local task, err, candidates = M.find_task(tasks, anchor)
+    if not task then return nil, err, { candidates = candidates, handles = M.handles(tasks), query = anchor } end
+    if opts.before then return task.line end
+    return block_end(lines, task) + 1
+end
+
 -- ── Handles and task lookup ───────────────────────────────────────────────
 
--- Shortest unique handle (>= MIN_HANDLE hex digits) for each task, keyed by
--- task record. Tasks with identical summaries share a hash; they get the
--- full hash and can only be told apart by editing one of them.
+-- The handle of each task, keyed by task record: its identifier when it
+-- has one that no other task of the file shares, else the shortest unique
+-- prefix (>= MIN_HANDLE hex digits) of its hash. Tasks with identical
+-- summaries share a hash; they get the full hash and can only be told
+-- apart by editing one of them.
 function M.handles(tasks)
     local out = {}
+    local id_count = {}
     for _, t in ipairs(tasks) do
+        local id = tmid.of(t.summary)
+        if id then id_count[id] = (id_count[id] or 0) + 1 end
+    end
+    for _, t in ipairs(tasks) do
+        local id = tmid.of(t.summary)
         local len = M.MIN_HANDLE
         for _, o in ipairs(tasks) do
             if o ~= t and o.hash ~= t.hash then
@@ -164,19 +197,29 @@ function M.handles(tasks)
                 if common + 1 > len then len = common + 1 end
             end
         end
-        out[t] = t.hash:sub(1, len)
+        out[t] = (id and id_count[id] == 1) and id or t.hash:sub(1, len)
     end
     return out
 end
 
--- Find a task in `tasks` by hash prefix (>= MIN_HANDLE hex digits, with or
--- without [brackets]) or case-insensitive substring of its summary.
+-- Find a task in `tasks` by identifier (with or without its `id:` prefix),
+-- hash prefix (>= MIN_HANDLE hex digits), or case-insensitive substring of
+-- its summary; a handle may be given in [brackets]. An identifier carried
+-- by several tasks is ambiguous, like a shared hash prefix.
 -- Returns task; or nil, "ambiguous_hash" | "ambiguous_pattern", candidates;
 -- or nil, "not_found".
 function M.find_task(tasks, query)
     if not query then return nil, "not_found" end
     local q = query:gsub("^%s*%[", ""):gsub("%]%s*$", ""):gsub("^%s+", ""):gsub("%s+$", "")
     if q == "" then return nil, "not_found" end
+
+    local id_matches = {}
+    local q_id = q:gsub("^" .. tmid.PREFIX, "")
+    for _, t in ipairs(tasks) do
+        if tmid.of(t.summary) == q_id then id_matches[#id_matches + 1] = t end
+    end
+    if #id_matches == 1 then return id_matches[1] end
+    if #id_matches > 1 then return nil, "ambiguous_hash", id_matches end
 
     if #q >= M.MIN_HANDLE and q:match("^%x+$") then
         local qh = q:lower()
@@ -209,8 +252,23 @@ function M.format_candidates(matches, handles)
     return table.concat(out, "\n")
 end
 
+-- Whether a task line carries every tag in `tags` and none in `not_tags`.
+-- A tag is matched as a whole word anywhere on the line (§4.3.2).
+local function has_tags(summary, tags, not_tags)
+    local words = {}
+    for word in summary:gmatch("%S+") do words[word] = true end
+    for _, tag in ipairs(tags or {}) do
+        if not words[tag] then return false end
+    end
+    for _, tag in ipairs(not_tags or {}) do
+        if words[tag] then return false end
+    end
+    return true
+end
+
 -- Compact one-line-per-task listing of a file. opts.filter: "pending"
--- (default) or "all". Returns the lines, or nil, reason.
+-- (default) or "all"; opts.tags / opts.not_tags: tags a task must / must
+-- not carry. Returns the lines, or nil, reason.
 function M.format_list(file_or_lines, opts)
     opts = opts or {}
     local lines = file_or_lines
@@ -222,7 +280,9 @@ function M.format_list(file_or_lines, opts)
     local handles = M.handles(tasks)
     local out = {}
     for _, t in ipairs(tasks) do
-        if not t.done then
+        if not has_tags(t.summary, opts.tags, opts.not_tags) then
+            -- filtered out
+        elseif not t.done then
             out[#out + 1] = string.format("[%s] %s", handles[t], t.summary)
         elseif opts.filter == "all" then
             out[#out + 1] = string.format("[%s] [x] %s", handles[t], t.summary)
@@ -308,7 +368,8 @@ end
 -- ── tm move ───────────────────────────────────────────────────────────────
 
 -- Move a task (with its payload) from one document to another, or to
--- another section of the same document. The destination is written first,
+-- another section of the same document, or directly before or after a
+-- named task (opts.before / opts.after). The destination is written first,
 -- so an interrupted move leaves a duplicate rather than losing the task.
 function M.move(opts)
     local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
@@ -327,6 +388,11 @@ function M.move(opts)
         local task, err, candidates = M.find_task(tasks, opts.query)
         if not task then return false, err, { candidates = candidates, handles = handles } end
 
+        local anchor = opts.before or opts.after
+        if same and anchor and M.find_task(tasks, anchor) == task then
+            return false, "cannot place a task relative to itself"
+        end
+
         local last = block_end(src, task)
         local block, rest = {}, {}
         for i = 1, #src do
@@ -335,15 +401,15 @@ function M.move(opts)
         end
 
         if same then
-            local at, aerr = insertion_point(rest, opts.section)
-            if not at then return false, aerr .. " in " .. to end
+            local at, aerr, adetail = placement(rest, opts)
+            if not at then return false, adetail and aerr or (aerr .. " in " .. to), adetail end
             local ok, werr = write_lines(to, splice(rest, at, block), dest_nl)
             if not ok then return false, werr end
             return true, task, handles
         end
 
-        local at, aerr = insertion_point(dest, opts.section)
-        if not at then return false, aerr .. " in " .. to end
+        local at, aerr, adetail = placement(dest, opts)
+        if not at then return false, adetail and aerr or (aerr .. " in " .. to), adetail end
         local ok, werr = write_lines(to, splice(dest, at, block), dest_nl)
         if not ok then return false, werr end
         ok, werr = write_lines(from, rest, src_nl)
@@ -354,8 +420,19 @@ end
 
 -- ── tm add ────────────────────────────────────────────────────────────────
 
--- Add a pending task to an existing document. opts: text, priority,
--- section, file | tasks_dir. Returns true, task-ish; or false, reason.
+-- `paths` plus `extra` when it is not already among them.
+local function with_file(paths, extra)
+    for _, p in ipairs(paths) do
+        if p == extra then return paths end
+    end
+    paths[#paths + 1] = extra
+    return paths
+end
+
+-- Add a pending task to an existing document, stamped with an identifier
+-- unused in any task file unless its text already carries one. opts: text,
+-- priority, section | before | after, file | tasks_dir, generate (identifier source, for
+-- tests). Returns true, task-ish; or false, reason.
 function M.add(opts)
     local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
     local file = opts.file or cfg.active_path
@@ -367,13 +444,24 @@ function M.add(opts)
         if not pri then return false, "priority must be a single letter A-Z: " .. opts.priority end
         if not text:match("^%([A-Z]%) ") then text = "(" .. pri:upper() .. ") " .. text end
     end
-    local task_line = "- [ ] " .. text
 
     return tmio.with_lock(dir_of(file), function()
         local lines, nl = read_file(file)
         if not lines then return false, "no such file: " .. file end
-        local at, aerr = insertion_point(lines, opts.section)
-        if not at then return false, aerr .. " in " .. file end
+        local at, aerr, adetail = placement(lines, opts)
+        if not at then return false, adetail and aerr or (aerr .. " in " .. file), adetail end
+        local texts = tmid.read_texts(with_file(tmid.task_files(cfg), file))
+        local supplied = tmid.of(text)
+        if supplied then
+            if tmid.taken(supplied, texts) then
+                return false, tmid.PREFIX .. supplied .. " is already in use in the task files"
+            end
+        else
+            local id, ierr = tmid.fresh(texts, opts.generate)
+            if not id then return false, ierr end
+            text = text .. " " .. tmid.PREFIX .. id
+        end
+        local task_line = "- [ ] " .. text
         local new_lines = tmsweep_core.normalize_blank_lines(splice(lines, at, { task_line }))
         local ok, werr = write_lines(file, new_lines, nl)
         if not ok then return false, werr end
@@ -387,18 +475,113 @@ function M.add(opts)
     end)
 end
 
+-- ── tm id ─────────────────────────────────────────────────────────────────
+
+-- Stamp an identifier on every pending task that lacks one. Completed
+-- tasks are never touched: their text is a record. opts: files (default:
+-- the active and future files) | tasks_dir, generate.
+-- Returns true, stamped { file, id, summary }, duplicates (tmid.duplicates
+-- over every task file); or false, reason.
+function M.stamp(opts)
+    opts = opts or {}
+    local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
+    local files = opts.files
+    if not files then
+        files = {}
+        for _, path in ipairs({ cfg.active_path, cfg.future_path }) do
+            if tmio.file_exists(path) then files[#files + 1] = path end
+        end
+    end
+    local dirs = {}
+    for _, f in ipairs(files) do dirs[#dirs + 1] = dir_of(f) end
+
+    return with_locks(dirs, function()
+        local all = tmid.task_files(cfg)
+        for _, f in ipairs(files) do with_file(all, f) end
+        local texts = tmid.read_texts(all)
+
+        -- Draw every identifier before writing anything, so a failed draw
+        -- leaves all files as they were.
+        local stamped, rewrites = {}, {}
+        for _, file in ipairs(files) do
+            local lines, nl = read_file(file)
+            if not lines then return false, "no such file: " .. file end
+            local changed = false
+            for _, t in ipairs(tmscan.tasks(lines)) do
+                if not t.done and not tmid.of(t.summary) then
+                    local id, err = tmid.fresh(texts, opts.generate)
+                    if not id then return false, err end
+                    texts[#texts + 1] = tmid.PREFIX .. id
+                    lines[t.line] = lines[t.line]:gsub("%s+$", "") .. " " .. tmid.PREFIX .. id
+                    stamped[#stamped + 1] = { file = file, id = id, summary = tmscan.task_summary(lines[t.line]) }
+                    changed = true
+                end
+            end
+            if changed then rewrites[#rewrites + 1] = { file = file, lines = lines, nl = nl } end
+        end
+        for _, r in ipairs(rewrites) do
+            local ok, werr = write_lines(r.file, r.lines, r.nl)
+            if not ok then return false, werr end
+        end
+        return true, stamped, tmid.duplicates(all)
+    end)
+end
+
+-- ── tm next ───────────────────────────────────────────────────────────────
+
+-- The task to start (§5.1): among the pending tasks of the active file
+-- that match the tag filters and have no unmet dependency, the one with
+-- the highest priority flag, or the first in file order when none is
+-- flagged. A dependency is met only when the task it names is completed,
+-- in any task file. opts: file | tasks_dir, tags, not_tags.
+-- Returns task (nil when none is ready), handles, warnings; or nil, nil,
+-- nil, reason.
+function M.next(opts)
+    opts = opts or {}
+    local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
+    local file = opts.file or cfg.active_path
+    local lines = read_file(file)
+    if not lines then return nil, nil, nil, "no such file: " .. file end
+
+    local tasks = tmscan.tasks(lines)
+    local handles = M.handles(tasks)
+    local all = with_file(tmid.task_files(cfg), file)
+    local status, warnings = {}, {}
+    local best
+    for _, t in ipairs(tasks) do
+        if not t.done and has_tags(t.summary, opts.tags, opts.not_tags) then
+            local ready = true
+            for _, dep in ipairs(tmid.depends(lines, t)) do
+                if status[dep] == nil then status[dep] = tmid.status(dep, all) or "unknown" end
+                if status[dep] == "unknown" then
+                    warnings[#warnings + 1] = string.format("[%s] depends on %s%s, which names no task",
+                        handles[t], tmid.PREFIX, dep)
+                end
+                if status[dep] ~= "done" then ready = false end
+            end
+            -- "~" sorts after every priority letter; strict < keeps file order.
+            if ready and (not best or (t.priority or "~") < (best.priority or "~")) then best = t end
+        end
+    end
+    return best, handles, warnings
+end
+
 -- ── CLI ───────────────────────────────────────────────────────────────────
 
 local USAGE = {
-    list = "Usage: tm list [--pending|--all] [--tasks-dir DIR] [file...]",
+    list = "Usage: tm list [--pending|--all] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]   (TAG: +project or @context)",
+    next = "Usage: tm next [--not TAG]... [TAG...] [--file FILE] [--tasks-dir DIR]   (TAG: +project or @context)",
+    id   = "Usage: tm id [--tasks-dir DIR] [file...]",
     done = "Usage: tm done [options] [--] <handle-or-pattern>   (options: --git [REV], --file FILE, --tasks-dir DIR)",
-    move = "Usage: tm move [options] [--] <handle-or-pattern>   (options: --from FILE, --to FILE, --section SECTION, --tasks-dir DIR)",
-    add  = "Usage: tm add [options] [--] <task-text>   (options: -p|--priority PRI, --section SECTION, --file FILE, --tasks-dir DIR)",
+    move = "Usage: tm move [options] [--] <handle-or-pattern>   (options: --from FILE, --to FILE, --section SECTION | --before TASK | --after TASK, --tasks-dir DIR)",
+    add  = "Usage: tm add [options] [--] <task-text>   (options: -p|--priority PRI, --section SECTION | --before TASK | --after TASK, --file FILE, --tasks-dir DIR)\n" ..
+           "  A new identifier is stamped unless <task-text> already carries one (e.g. id:z0114), which must be unused.",
 }
 
 local VALUE_OPTS = {
     ["--tasks-dir"] = "tasks_dir", ["--file"] = "file", ["--section"] = "section",
     ["-p"] = "priority", ["--priority"] = "priority", ["--from"] = "from", ["--to"] = "to",
+    ["--before"] = "before", ["--after"] = "after",
 }
 
 -- Short SHA of a commit-ish, verified to exist; nil if it does not resolve.
@@ -418,6 +601,7 @@ end
 -- Turn a failed lookup/mutation into a message and exit.
 local function report_failure(query, reason, detail)
     detail = detail or {}
+    query = detail.query or query
     if reason == "ambiguous_hash" or reason == "ambiguous_pattern" then
         tmio.die(string.format("Ambiguous %s '%s' matches %d tasks:\n%s\n%s",
             reason == "ambiguous_hash" and "handle" or "pattern", query, #detail.candidates,
@@ -436,6 +620,7 @@ function M.run(subcmd, args)
     args = args or {}
     local opts, positionals = {}, {}
     local filter = "pending"
+    local not_tags = {}
     local git_flag, git_rev, git_at = false, nil, nil
 
     local i = 1
@@ -446,6 +631,10 @@ function M.run(subcmd, args)
             -- even when it starts with '-'.
             for j = i + 1, #args do positionals[#positionals + 1] = args[j] end
             break
+        elseif a == "--not" then
+            if not args[i + 1] then tmio.die(a .. " requires an argument") end
+            not_tags[#not_tags + 1] = args[i + 1]
+            i = i + 1
         elseif VALUE_OPTS[a] then
             if not args[i + 1] then tmio.die(a .. " requires an argument") end
             opts[VALUE_OPTS[a]] = args[i + 1]
@@ -480,11 +669,56 @@ function M.run(subcmd, args)
         tmio.die("--git applies only to tm done\n" .. USAGE[subcmd])
     end
 
+    -- For list and next, a positional starting with '+' or '@' is a tag
+    -- filter; anything else names a file (`./@name` for a file so named).
+    local tags = {}
+    if subcmd == "list" or subcmd == "next" then
+        local others = {}
+        for _, p in ipairs(positionals) do
+            if p:match("^[+@]") then tags[#tags + 1] = p else others[#others + 1] = p end
+        end
+        positionals = others
+    elseif #not_tags > 0 then
+        tmio.die("--not applies only to tm list and tm next\n" .. USAGE[subcmd])
+    end
+
+    if subcmd == "next" then
+        if #positionals > 0 then
+            tmio.die("Unexpected argument: " .. positionals[1] .. " (a tag starts with + or @)\n" .. USAGE.next)
+        end
+        local task, handles, warnings, err = M.next({
+            file = opts.file, tasks_dir = opts.tasks_dir, tags = tags, not_tags = not_tags,
+        })
+        if err then tmio.die(err) end
+        for _, w in ipairs(warnings) do io.stderr:write("tm: " .. w .. "\n") end
+        if task then
+            print(string.format("[%s] %s", handles[task], task.summary))
+        else
+            io.stderr:write("tm: no task is ready\n")
+        end
+        os.exit(0)
+    end
+
+    if subcmd == "id" then
+        local ok, stamped, duplicates = M.stamp({
+            tasks_dir = opts.tasks_dir, files = #positionals > 0 and positionals or nil,
+        })
+        if not ok then tmio.die("Failed to stamp identifiers: " .. tostring(stamped)) end
+        for _, s in ipairs(stamped) do
+            print(string.format("Stamped: [%s] %s", s.id, s.summary))
+        end
+        if #stamped == 0 then print("Nothing to stamp: every pending task has an identifier.") end
+        for _, d in ipairs(duplicates) do
+            io.stderr:write("tm: " .. tmid.describe_duplicate(d) .. "\n")
+        end
+        os.exit(0)
+    end
+
     if subcmd == "list" then
         local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
         local files = #positionals > 0 and positionals or { cfg.active_path }
         for idx, f in ipairs(files) do
-            local items, err = M.format_list(f, { filter = filter })
+            local items, err = M.format_list(f, { filter = filter, tags = tags, not_tags = not_tags })
             if not items then tmio.die(err) end
             if #files > 1 then
                 if idx > 1 then print("") end
@@ -506,8 +740,12 @@ function M.run(subcmd, args)
         local ok, res, handles = M.add({
             text = table.concat(positionals, " "), priority = opts.priority,
             section = opts.section, file = opts.file, tasks_dir = opts.tasks_dir,
+            before = opts.before, after = opts.after,
         })
-        if not ok then tmio.die("Failed to add task: " .. tostring(res)) end
+        if not ok then
+            if handles and handles.query then report_failure(nil, res, handles) end
+            tmio.die("Failed to add task: " .. tostring(res))
+        end
         print(string.format("Added: [%s] %s", handle_of(res, handles), res.summary))
         os.exit(0)
     end
@@ -538,6 +776,7 @@ function M.run(subcmd, args)
         local ok, res, detail = M.move({
             query = query, from = opts.from or opts.file, to = opts.to,
             section = opts.section, tasks_dir = opts.tasks_dir,
+            before = opts.before, after = opts.after,
         })
         if not ok then report_failure(query, res, detail) end
         print(string.format("Moved: [%s] %s", handle_of(res, detail), res.summary))

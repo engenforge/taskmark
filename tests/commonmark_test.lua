@@ -1,7 +1,7 @@
 #!/usr/bin/env lua
 -- tests/commonmark_test.lua — the CommonMark conformance oracle.
 --
--- SPEC-TASKMARK-04 §1.2 claims every conforming document is a strict
+-- SPEC-TASKMARK-05 §1.2 claims every conforming document is a strict
 -- CommonMark subset that renders correctly and legibly in any CommonMark
 -- renderer. The runtime does not use a CommonMark parser (tmscan reads
 -- Taskmark's own fixed grammar directly), so that claim needs an
@@ -121,7 +121,7 @@ local function check_oracle(body_text, body_lines)
     return #reasons == 0, reasons
 end
 
--- In SPEC-TASKMARK-04, task files are pure CommonMark without frontmatter.
+-- Since SPEC-TASKMARK-04, task files are pure CommonMark without frontmatter.
 local function body_of(lines)
     return lines
 end
