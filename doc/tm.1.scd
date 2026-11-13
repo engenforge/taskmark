@@ -193,10 +193,13 @@ the current working directory (the layout described by the spec).
 	from _REF_.
 
 *--from* _FILE_
-	With *move*: source file to move the task from (defaults to _future.tm.md_).
+	With *move*: source file to move the task from. Defaults to _future.tm.md_, or
+	_active.tm.md_ when the task is not in _future.tm.md_ but is there.
 
 *--to* _FILE_
-	With *move*: destination file to move the task to (defaults to _active.tm.md_).
+	With *move*: destination file to move the task to. Defaults to the file holding the
+	*--before* or *--after* task when exactly one of _active.tm.md_ and
+	_future.tm.md_ does, else _active.tm.md_.
 
 *--git* [_REV_]
 	With *done*: record the short SHA of _REV_ (default *HEAD*) in the

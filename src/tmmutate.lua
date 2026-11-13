@@ -367,14 +367,55 @@ end
 
 -- ── tm move ───────────────────────────────────────────────────────────────
 
+-- The tasks of the document at `path`, or nil when it cannot be read.
+local function tasks_of(path)
+    local lines = read_file(path)
+    return lines and tmscan.tasks(lines)
+end
+
+-- The document a move with no --from takes its task from: future.tm.md,
+-- unless the task is not there but is in active.tm.md. Returns the path
+-- and the paths that were searched.
+local function infer_source(cfg, query)
+    local function matches(path)
+        local tasks = tasks_of(path)
+        if not tasks then return false end
+        local task, reason = M.find_task(tasks, query)
+        return task ~= nil or reason ~= "not_found"
+    end
+    local searched = { cfg.future_path, cfg.active_path }
+    if not matches(cfg.future_path) and matches(cfg.active_path) then
+        return cfg.active_path, searched
+    end
+    return cfg.future_path, searched
+end
+
+-- The document a move with no --to puts the task in: the one holding the
+-- --before/--after anchor when exactly one of active.tm.md and
+-- future.tm.md does, else active.tm.md.
+local function infer_destination(cfg, anchor)
+    if not anchor then return cfg.active_path end
+    local holders = {}
+    for _, path in ipairs({ cfg.active_path, cfg.future_path }) do
+        local tasks = tasks_of(path)
+        if tasks and (M.find_task(tasks, anchor)) then holders[#holders + 1] = path end
+    end
+    return #holders == 1 and holders[1] or cfg.active_path
+end
+
 -- Move a task (with its payload) from one document to another, or to
 -- another section of the same document, or directly before or after a
 -- named task (opts.before / opts.after). The destination is written first,
 -- so an interrupted move leaves a duplicate rather than losing the task.
+-- Without opts.from the task is taken from future.tm.md, else active.tm.md;
+-- without opts.to it goes to the document holding the anchor, else
+-- active.tm.md. Returns true, task, handles, {from=, to=, same=}.
 function M.move(opts)
     local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
-    local from = opts.from or cfg.future_path
-    local to = opts.to or cfg.active_path
+    local anchor = opts.before or opts.after
+    local from, searched = opts.from, { opts.from }
+    if not from then from, searched = infer_source(cfg, opts.query) end
+    local to = opts.to or infer_destination(cfg, anchor)
 
     return with_locks({ dir_of(from), dir_of(to) }, function()
         local src, src_nl = read_file(from)
@@ -386,9 +427,14 @@ function M.move(opts)
         local tasks = tmscan.tasks(src)
         local handles = M.handles(tasks)
         local task, err, candidates = M.find_task(tasks, opts.query)
-        if not task then return false, err, { candidates = candidates, handles = handles } end
+        if not task then
+            return false, err, { candidates = candidates, handles = handles,
+                searched = searched, inferred = not opts.from }
+        end
 
-        local anchor = opts.before or opts.after
+        if same and not (opts.from or opts.to or anchor or opts.section) then
+            return false, "task is already in " .. to .. "; give --to, --section, --before or --after"
+        end
         if same and anchor and M.find_task(tasks, anchor) == task then
             return false, "cannot place a task relative to itself"
         end
@@ -405,7 +451,7 @@ function M.move(opts)
             if not at then return false, adetail and aerr or (aerr .. " in " .. to), adetail end
             local ok, werr = write_lines(to, splice(rest, at, block), dest_nl)
             if not ok then return false, werr end
-            return true, task, handles
+            return true, task, handles, { from = from, to = to, same = true }
         end
 
         local at, aerr, adetail = placement(dest, opts)
@@ -414,7 +460,7 @@ function M.move(opts)
         if not ok then return false, werr end
         ok, werr = write_lines(from, rest, src_nl)
         if not ok then return false, werr end
-        return true, task, handles
+        return true, task, handles, { from = from, to = to, same = false }
     end)
 end
 
@@ -611,6 +657,10 @@ local function report_failure(query, reason, detail)
         tmio.die(string.format("Task is already completed: [%s] %s",
             handle_of(detail.task, detail.handles), detail.task.summary))
     elseif reason == "not_found" then
+        if detail.searched then
+            tmio.die(string.format("No task found matching '%s' in %s.%s", query,
+                table.concat(detail.searched, ", "), detail.inferred and " Use --from FILE to search elsewhere." or ""))
+        end
         tmio.die(string.format("No task found matching '%s'.", query))
     end
     tmio.die(tostring(reason))
@@ -773,13 +823,14 @@ function M.run(subcmd, args)
     end
 
     if subcmd == "move" then
-        local ok, res, detail = M.move({
+        local ok, res, detail, info = M.move({
             query = query, from = opts.from or opts.file, to = opts.to,
             section = opts.section, tasks_dir = opts.tasks_dir,
             before = opts.before, after = opts.after,
         })
         if not ok then report_failure(query, res, detail) end
-        print(string.format("Moved: [%s] %s", handle_of(res, detail), res.summary))
+        local from_note = info and not info.same and (" (from " .. info.from:match("[^/]*$") .. ")") or ""
+        print(string.format("Moved: [%s] %s%s", handle_of(res, detail), res.summary, from_note))
         os.exit(0)
     end
 end

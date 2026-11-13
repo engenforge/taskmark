@@ -162,7 +162,7 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 | `tm add <text> [-p PRI] [--section S \| --before T \| --after T]` | Add a task to an existing file, under the first heading or the named section, or directly before or after task `T`, stamped with a new identifier unless the text already carries an unused one (`id:z0114`). |
 | `tm id [file...]` | Stamp an identifier on every pending task that lacks one (default: the active and future files) and report any identifier carried by two tasks. |
 | `tm done <handle\|pattern> [--git [REV]]` | Mark a pending task completed, stamping the local date and optionally `git:<sha>` of REV (default `HEAD`). |
-| `tm move <handle\|pattern> [--from F] [--to T] [--section S \| --before T \| --after T]` | Move a task between files or sections, or next to another task (default: `future.tm.md` to `active.tm.md`); destination written first. |
+| `tm move <handle\|pattern> [--from F] [--to T] [--section S \| --before T \| --after T]` | Move a task between files or sections, or next to another task (default: `future.tm.md` to `active.tm.md`, inferred from the task or anchor when it is not there); destination written first. |
 | `tm check-shas [--branch REF]` | Report `git:<sha>` citations in any task file that no longer name a commit (or, with `--branch`, are not reachable from `REF`); exits 1 if any. |
 | `tm remap OLD NEW [OLD NEW...]` | After a squash or rebase, replace citations of each old commit with its new one in every task file, the archive included. |
 | `tm sweep [--sprint <id>]` | Move every completed task (with its payload) from `active.tm.md` to `completed.tm.md`, newest first, under `## YYYY-MM` (or `## Sprint <id>`). |
@@ -180,8 +180,8 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 - `-p, --priority <PRI>`: With `add`, assign priority `(A)`-`(Z)`.
 - `--section <SEC>`: With `add` or `move`, specify target heading.
 - `--git [REV]`: With `done`, record git commit SHA (`git:<sha>`, defaulting to `HEAD`).
-- `--from <FILE>`: With `move`, source file (default: `future.tm.md`).
-- `--to <FILE>`: With `move`, destination file (default: `active.tm.md`).
+- `--from <FILE>`: With `move`, source file (default: `future.tm.md`, else `active.tm.md` when the task is only there).
+- `--to <FILE>`: With `move`, destination file (default: the file holding the `--before`/`--after` anchor, else `active.tm.md`).
 - `--sprint <id>`: With `sweep`, bucket the swept tasks under `## Sprint <id>` instead of the current month.
 - `--dry-run`: Preview changes without modifying any files. Applies to `sweep` and `archive`.
 - `--orphan [BRANCH]`: With `init`, initialize an isolated orphan Git branch (default: `tasks`), add the directory to `.gitignore` (and record a non-default directory in `.taskmarkrc`), and mount it as a worktree.

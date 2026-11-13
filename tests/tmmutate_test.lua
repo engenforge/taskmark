@@ -973,6 +973,73 @@ do
     cleanup_dir(tmp)
 end
 
+-- ── 9. tm move: inferred source and destination ───────────────────────────
+
+do
+    local tmp = make_temp_dir()
+    tmio.mkdir_p(tmp .. "/.tasks")
+    local active, future = tmp .. "/.tasks/active.tm.md", tmp .. "/.tasks/future.tm.md"
+    local base = "# Now\n\n- [ ] First id:aaaaa\n\n- [ ] Second id:bbbbb\n\n- [ ] Third id:ccccc\n"
+    local function order()
+        local names = {}
+        for line in (read(active) or ""):gmatch("%- %[ %] (%S+)") do names[#names + 1] = line end
+        return table.concat(names, " ")
+    end
+    write(active, base)
+    write(future, "# Planned\n\n- [ ] Later id:ddddd\n")
+    local dir = { tasks_dir = tmp .. "/.tasks" }
+
+    -- Source: not in future.tm.md, so found in active.tm.md.
+    local ok, _, _, info = tmmutate.move({ tasks_dir = dir.tasks_dir, query = "ccccc", before = "aaaaa" })
+    check("move-infer", "task absent from future is found in active and reordered",
+        ok == true and order() == "Third First Second", order())
+    check("move-infer", "info reports a same-file move", info and info.same == true and info.from == active, info and info.from)
+
+    -- Destination follows the anchor, even when it is in future.tm.md.
+    write(active, base)
+    ok = tmmutate.move({ tasks_dir = dir.tasks_dir, query = "ddddd", after = "bbbbb" })
+    check("move-infer", "promotion with an anchor in active lands beside it",
+        ok and order() == "First Second Later Third", order())
+
+    write(active, base)
+    write(future, "# Planned\n\n- [ ] Later id:ddddd\n\n- [ ] Sooner id:eeeee\n")
+    ok = tmmutate.move({ tasks_dir = dir.tasks_dir, query = "eeeee", before = "ddddd" })
+    check("move-infer", "anchor in future makes a within-future reorder",
+        ok and read(future):find("Sooner id:eeeee.-Later id:ddddd") ~= nil and order() == "First Second Third", read(future))
+
+    -- future wins when the task is in both files.
+    write(active, base .. "\n- [ ] Both id:fffff\n")
+    write(future, "# Planned\n\n- [ ] Both id:ggggg\n")
+    ok = tmmutate.move({ tasks_dir = dir.tasks_dir, query = "Both" })
+    check("move-infer", "a match in future.tm.md takes precedence over active",
+        ok and read(future):find("Both", 1, true) == nil, read(future))
+
+    -- Already in active with nowhere to go is an error, nothing changes.
+    write(active, base)
+    write(future, "# Planned\n\n- [ ] Later id:ddddd\n")
+    local bad, why = tmmutate.move({ tasks_dir = dir.tasks_dir, query = "ccccc" })
+    check("move-infer", "a task already in the destination needs a placement",
+        bad == false and tostring(why):find("already in", 1, true) ~= nil and read(active) == base, why)
+
+    -- Not found names the files searched and hints at --from.
+    local out, code = tm_in(tmp, "move nosuchtask")
+    check("move-infer", "not-found names the searched files and --from",
+        code ~= 0 and out:find("future.tm.md", 1, true) ~= nil and out:find("active.tm.md", 1, true) ~= nil
+        and out:find("--from", 1, true) ~= nil, out)
+    out, code = tm_in(tmp, "move nosuchtask --from .tasks/active.tm.md")
+    check("move-infer", "not-found with explicit --from names only that file",
+        code ~= 0 and out:find("active.tm.md", 1, true) ~= nil and out:find("future.tm.md", 1, true) == nil, out)
+
+    -- CLI output names the source file only when it differs from the destination.
+    out, code = tm_in(tmp, "move ddddd")
+    check("move-infer", "cross-file move names its source file",
+        code == 0 and out:find("(from future.tm.md)", 1, true) ~= nil, out)
+    out, code = tm_in(tmp, "move ccccc --before aaaaa")
+    check("move-infer", "same-file move does not mention a source",
+        code == 0 and out:find("Moved:", 1, true) ~= nil and out:find("from", 1, true) == nil, out)
+    cleanup_dir(tmp)
+end
+
 -- ── Summary ──────────────────────────────────────────────────────────────
 
 print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))

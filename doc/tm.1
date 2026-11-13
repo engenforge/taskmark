@@ -5,7 +5,7 @@
 .nh
 .ad l
 .\" Begin generated content:
-.TH "tm" "1" "2026\-11\-10"
+.TH "tm" "1" "2026\-11\-12"
 .PP
 .SH NAME
 tm \- universal taskmark utility
@@ -251,12 +251,15 @@ from \fIREF\fR.\&
 .RE
 \fB\-\-from\fR \fIFILE\fR
 .RS 4
-With \fBmove\fR: source file to move the task from (defaults to \fIfuture.\&tm.\&md\fR).\&
+With \fBmove\fR: source file to move the task from.\& Defaults to \fIfuture.\&tm.\&md\fR, or
+\fIactive.\&tm.\&md\fR when the task is not in \fIfuture.\&tm.\&md\fR but is there.\&
 .PP
 .RE
 \fB\-\-to\fR \fIFILE\fR
 .RS 4
-With \fBmove\fR: destination file to move the task to (defaults to \fIactive.\&tm.\&md\fR).\&
+With \fBmove\fR: destination file to move the task to.\& Defaults to the file holding the
+\fB\-\-before\fR or \fB\-\-after\fR task when exactly one of \fIactive.\&tm.\&md\fR and
+\fIfuture.\&tm.\&md\fR does, else \fIactive.\&tm.\&md\fR.\&
 .PP
 .RE
 \fB\-\-git\fR [\fIREV\fR]
