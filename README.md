@@ -113,7 +113,7 @@ Optional conventions adapted from `todo.txt`, layered onto the existing task/pay
 
 All of the above paths are conventions, not hardcoded requirements. Configuration is read from two optional, flat `key: value` files — a local one for a single project and a global one for user-wide settings — resolved per key, highest priority first: an explicit command-line option, the local file, the global file, then the built-in default (see [`doc/taskmark_spec.md` §9](doc/taskmark_spec.md#9-configuration)):
 
-- **Local** — `.taskmarkrc` in the current working directory, or discovered by searching upward to the repository root.
+- **Local** — `.taskmarkrc` in the current working directory, or discovered by searching upward to the repository root. In a linked worktree nested in its own repository (`build/<name>`), a relative `tasks_dir` that does not exist in the worktree is taken from the main checkout, where an orphan-branch task directory is mounted.
 - **Global** — `$XDG_CONFIG_HOME/taskmark/config`, falling back to `~/.config/taskmark/config`.
 
 ```text
@@ -163,6 +163,7 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 | `tm id [file...]` | Stamp an identifier on every pending task that lacks one (default: the active and future files) and report any identifier carried by two tasks. |
 | `tm done <handle\|pattern> [--git [REV]]` | Mark a pending task completed, stamping the local date and optionally `git:<sha>` of REV (default `HEAD`). |
 | `tm move <handle\|pattern> [--from F] [--to T] [--section S \| --before T \| --after T]` | Move a task between files or sections, or next to another task (default: `future.tm.md` to `active.tm.md`, inferred from the task or anchor when it is not there); destination written first. |
+| `tm payload <handle\|pattern> [--append \| --replace]` | Print a task's payload without its indent; `--append` adds standard input beneath it and `--replace` puts standard input in its place, under the lock and only if the task still validates. |
 | `tm check-shas [--branch REF]` | Report `git:<sha>` citations in any task file that no longer name a commit (or, with `--branch`, are not reachable from `REF`); exits 1 if any. |
 | `tm remap OLD NEW [OLD NEW...]` | After a squash or rebase, replace citations of each old commit with its new one in every task file, the archive included. |
 | `tm sweep [--sprint <id>]` | Move every completed task (with its payload) from `active.tm.md` to `completed.tm.md`, newest first, under `## YYYY-MM` (or `## Sprint <id>`). |
@@ -224,6 +225,10 @@ tm check-shas --branch main
 # Mark a task completed with the current commit's SHA (or a named commit)
 tm done k7q2x --git
 tm done "socket timeout" --git=abc1234
+
+# Record a finding in a task's payload without opening the file
+echo "Review: the retry path is untested." | tm payload k7q2x --append
+tm indent diff < fix.patch | tm payload k7q2x --append
 
 # Promote task from backlog (future.tm.md) to active sprint (active.tm.md)
 tm move 8b12

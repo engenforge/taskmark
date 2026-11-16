@@ -38,7 +38,7 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
 
 - This project tracks its own work with Taskmark. Current tasks are in `.tasks/active.tm.md`, planned work in `.tasks/future.tm.md`, and finished work in `.tasks/completed.tm.md` (newest first).
 - `.tasks/` is a git worktree of the orphan `tasks` branch and is ignored on `main`, so repository-wide searches skip it: read or search those paths directly. A fresh clone does not have it: run `tm init --orphan` from the repository root to mount `origin/tasks` there (or `git fetch origin && git worktree add .tasks tasks`).
-- Prefer the CLI to hand-editing: `tm list` for a compact view, `tm next` for the task to start, `tm done <handle> --git` to complete a task, `tm add`/`tm move` to add or promote one. Cite a task by its identifier (`id:k7q2x`), never by a hash handle; `tm id` stamps tasks that lack one. Commit task changes with `tm sync`, never as part of a code commit.
+- Prefer the CLI to hand-editing: `tm list` for a compact view, `tm next` for the task to start, `tm done <handle> --git` to complete a task, `tm add`/`tm move` to add or promote one, `tm payload <handle> --append` to add notes to one. Cite a task by its identifier (`id:k7q2x`), never by a hash handle; `tm id` stamps tasks that lack one. Commit task changes with `tm sync`, never as part of a code commit.
 
 ## Sources of truth
 

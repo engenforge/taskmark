@@ -91,6 +91,20 @@ the current working directory (the layout described by the spec).
 	is removed from the source, so an interrupted move leaves a duplicate,
 	never a loss. The destination must exist.
 
+*payload* _<hash-or-pattern>_ [--append | --replace] [--file _FILE_] [--tasks-dir _DIR_]
+	Print a task's payload on standard output, without its four-space
+	indent. With *--append*, add standard input beneath the payload,
+	separated by a blank line; with *--replace*, put standard input in the
+	payload's place. The input is payload content without the indent, as
+	*dedent* emits it, so a payload is edited with
+	*tm payload k7q2x | sed ... | tm payload k7q2x --replace*. The task is looked for in _active.tm.md_,
+	then _future.tm.md_ (or only in *--file*), pending or completed. The
+	write is made under the lock (see FILES), so it cannot discard another
+	session's change to the file, as editing the file directly can; prefer
+	*--append*, which also cannot discard a change to the same payload.
+	Nothing is written when the input is empty or the task would no longer
+	pass *validate*.
+
 *sweep*
 	Move every `- [x]` task and its payload out of _active.tm.md_ and into
 	_completed.tm.md_, bucketed under a "## YYYY-MM" section for the month
@@ -319,7 +333,7 @@ _.tasks/archive/<YYYY>/<YYYY-MM>.tm.md_
 	never hand-authored.
 
 _<tasks-dir>/.tm.lock_
-	Transient lock directory held by *add*, *id*, *done*, *move*, *remap*, *sweep*,
+	Transient lock directory held by *add*, *id*, *done*, *move*, *payload*, *remap*, *sweep*,
 	*archive*, and *validate --fix* for the duration of their read-modify-write,
 	so concurrent *tm* runs wait for each other instead of losing updates.
 	A stale lock left by a killed process may be removed by hand.
@@ -331,7 +345,9 @@ optional:
 - *Global* — _\$XDG_CONFIG_HOME/taskmark/config_, falling back to
   _~/.config/taskmark/config_ when unset.
 - *Local* — _.taskmarkrc_ in the current working directory or discovered
-  by searching upward to the enclosing repository root.
+  by searching upward to the enclosing repository root. In a linked worktree
+  nested in its own repository, a relative _tasks_dir_ that does not exist
+  in the worktree is taken from the main checkout.
 
 ```
 tasks_dir: .tasks

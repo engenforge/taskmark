@@ -1112,6 +1112,125 @@ do
     cleanup_dir(tmp)
 end
 
+-- ── tm payload ───────────────────────────────────────────────────────────
+
+do
+    local tmp = make_temp_dir()
+    local active, future = tmp .. "/.tasks/active.tm.md", tmp .. "/.tasks/future.tm.md"
+    tmio.mkdir_p(tmp .. "/.tasks")
+    local DOC = "# Current Sprint\n\n" ..
+        "- [ ] First task id:aaaaa\n" ..
+        "    > **Context:** Why it matters.\n\n" ..
+        "    Existing note.\n\n" ..
+        "- [ ] Second task id:bbbbb\n\n" ..
+        "- [x] Third task id:ccccc\n" ..
+        "    > **Completed:** 2026-11-01\n"
+    local function reset()
+        write(active, DOC)
+        write(future, "# Planned Work\n\n- [ ] Planned task id:ddddd\n")
+    end
+    local function valid(path) return #tmval.validate_lines(tmscan.lines_of(read(path))) == 0 end
+    -- Run `tm payload ARGS` with `input` on stdin.
+    local function payload(args, input)
+        write(tmp .. "/stdin.txt", input or "")
+        return tm_in(tmp, "payload " .. args .. " < stdin.txt")
+    end
+    local out, code
+
+    reset()
+    out, code = tm_in(tmp, "payload aaaaa < /dev/null")
+    check("payload", "prints the payload without its indent",
+        code == 0 and out == "> **Context:** Why it matters.\n\nExisting note.\n", out)
+    check("payload", "printing changes nothing", read(active) == DOC)
+    out, code = tm_in(tmp, "payload bbbbb < /dev/null")
+    check("payload", "prints nothing for a task without a payload", code == 0 and out == "", out)
+
+    out, code = payload("bbbbb --append", "A finding.\n\n```\n\tcode  \n```\n")
+    check("payload", "--append gives a task its first payload",
+        code == 0 and read(active):find("- [ ] Second task id:bbbbb\n    A finding.\n\n    ```\n    \tcode  \n    ```\n\n- [x] Third", 1, true) ~= nil,
+        out .. read(active))
+    check("payload", "--append reports the task", out:find("Appended: [bbbbb] Second task", 1, true) ~= nil, out)
+
+    out, code = payload("aaaaa --append", "\nReview: looks right.\n\n")
+    check("payload", "--append adds after the existing payload, separated by one blank line",
+        code == 0 and read(active):find("    Existing note.\n\n    Review: looks right.\n\n- [ ] Second", 1, true) ~= nil,
+        out .. read(active))
+    check("payload", "file validates after --append", valid(active))
+
+    out, code = payload("aaaaa --replace", "> **Context:** Rewritten.\n\nNew body.\n")
+    check("payload", "--replace swaps the whole payload and leaves the task line",
+        code == 0 and read(active):find("- [ ] First task id:aaaaa\n    > **Context:** Rewritten.\n\n    New body.\n\n- [ ] Second", 1, true) ~= nil
+            and read(active):find("Existing note", 1, true) == nil, out .. read(active))
+    check("payload", "--replace reports the task", out:find("Replaced: [aaaaa] First task", 1, true) ~= nil, out)
+    check("payload", "file validates after --replace", valid(active))
+
+    reset()
+    out, code = tm_in(tmp, "payload aaaaa < /dev/null > round.txt && lua " .. tm_abs .. " payload aaaaa --replace < round.txt")
+    check("payload", "print piped back into --replace leaves the file unchanged", code == 0 and read(active) == DOC, read(active))
+
+    out, code = payload("ccccc --append", "Reviewed after the fact.\n")
+    check("payload", "a completed task takes a note too",
+        code == 0 and read(active):find("    > **Completed:** 2026-11-01\n\n    Reviewed after the fact.\n", 1, true) ~= nil, out .. read(active))
+
+    out, code = payload("ddddd --append", "Planning note.\n")
+    check("payload", "a task only in future.tm.md is found there",
+        code == 0 and read(future):find("- [ ] Planned task id:ddddd\n    Planning note.\n", 1, true) ~= nil, out)
+    out, code = payload("ddddd --append --file .tasks/active.tm.md", "Nope.\n")
+    check("payload", "--file searches only that file", code ~= 0 and out:find("No task found", 1, true) ~= nil, out)
+
+    -- Refusals: nothing is written.
+    reset()
+    for _, case in ipairs({
+        { "a task token (V9)", "- [ ] nested\n", "V9" },
+        { "a bare quote line (V10)", "> just a reminder\n", "V10" },
+        { "an unclosed fence (V12)", "```\ncode\n", "V12" },
+    }) do
+        out, code = payload("aaaaa --append", case[2])
+        check("payload", "refuses " .. case[1] .. " and writes nothing",
+            code ~= 0 and out:find(case[3], 1, true) ~= nil and read(active) == DOC, out)
+    end
+    out, code = payload("aaaaa --replace", "> **Context:** x\nfreeform directly beneath\n")
+    check("payload", "refusal names the offending stdin line",
+        code ~= 0 and out:find("stdin:2", 1, true) ~= nil and out:find("V11", 1, true) ~= nil and read(active) == DOC, out)
+    out, code = payload("aaaaa --replace", "\n  \n")
+    check("payload", "refuses empty input rather than erase a payload",
+        code ~= 0 and out:find("empty", 1, true) ~= nil and read(active) == DOC, out)
+    out, code = payload("aaaaa --append --replace", "x\n")
+    check("payload", "refuses --append with --replace", code ~= 0 and read(active) == DOC, out)
+    out, code = payload("'no such task' --append", "x\n")
+    check("payload", "reports an unknown task", code ~= 0 and out:find("No task found", 1, true) ~= nil, out)
+    out, code = payload("aaaaa --append --tasks-dir nowhere", "x\n")
+    check("payload", "reports a missing tasks directory", code ~= 0 and out:find("directory does not exist: nowhere", 1, true) ~= nil, out)
+    out, code = tm_in(tmp, "payload aaaaa --file .tasks/missing.tm.md < /dev/null")
+    check("payload", "reports a missing task file", code ~= 0 and out:find("no such file: .tasks/missing.tm.md", 1, true) ~= nil, out)
+    out, code = payload("task --append", "x\n")
+    check("payload", "reports an ambiguous pattern with handles",
+        code ~= 0 and out:find("Ambiguous", 1, true) ~= nil and out:find("[aaaaa]", 1, true) ~= nil, out)
+
+    -- CRLF documents keep their line endings.
+    write(active, (DOC:gsub("\n", "\r\n")))
+    out, code = payload("bbbbb --append", "Note.\n")
+    check("payload", "keeps CRLF line endings",
+        code == 0 and read(active):find("id:bbbbb\r\n    Note.\r\n", 1, true) ~= nil
+            and read(active):gsub("\r\n", ""):find("[\r\n]") == nil, out)
+
+    -- Concurrent appends from separate processes all land.
+    reset()
+    local jobs = {}
+    for i = 1, 6 do
+        jobs[#jobs + 1] = string.format("(printf 'Note %d.\\n' | lua %s payload %s --append) &", i, tm_abs, i % 2 == 0 and "aaaaa" or "bbbbb")
+    end
+    io.popen(string.format("cd %s && ( %s wait ) 2>&1", tmio.shell_quote(tmp), table.concat(jobs, " "))):read("*a")
+    local body, landed = read(active), 0
+    for i = 1, 6 do
+        if body:find("    Note " .. i .. ".\n", 1, true) then landed = landed + 1 end
+    end
+    check("payload", "six concurrent --append runs all land", landed == 6, body)
+    check("payload", "file validates after concurrent --append", valid(active))
+
+    cleanup_dir(tmp)
+end
+
 -- ── Summary ──────────────────────────────────────────────────────────────
 
 print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))

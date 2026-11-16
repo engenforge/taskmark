@@ -567,6 +567,7 @@ Resolution is **per key**, not per file: a local file that sets only `tasks_dir`
 
 1. **Explicit command-line arguments** — a `--tasks-dir DIR` option, or a file path passed positionally to a subcommand that accepts one. These bypass both configuration files for the paths they name.
 2. **Local `.taskmarkrc`** — in the current working directory, or discovered by searching upward from the current working directory, stopping at the enclosing Git repository or worktree boundary. When discovered in an ancestor directory, relative paths in the configuration file are resolved relative to the directory containing `.taskmarkrc`.
+   A linked worktree mounted inside its own repository (a parallel work stream at `build/<name>`, say) is not a boundary, and it checks out its own copy of a committed `.taskmarkrc`. When the relative `tasks_dir` resolved there does not exist in that worktree, a tool SHOULD resolve it against the enclosing main checkout instead: a task directory on an orphan branch (§10.2) is mounted only there. A task directory that does exist in the worktree — task files committed on the code branch — is used as it is.
 3. **Global configuration file.**
 4. **Built-in defaults** — the conventional paths used throughout this specification. Inside a Git repository or worktree, unconfigured paths resolve relative to the repository root (§10).
 

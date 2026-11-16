@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `tm payload <handle>` prints a task's payload without its indent; `--append` adds standard input beneath it and `--replace` puts standard input in its place. The write is made under `.tm.lock`, so a payload edit no longer has to be made with an editor that can discard a concurrent `tm` change, and it is refused if the task would no longer validate.
 - `tm list`, `tm next`, `tm id`, `tm add`, `tm done`, `tm move` and `tm sweep` warn on standard error when a task file holds a task line indented one to three spaces, which they do not read as a task. Standard output and the exit status are unchanged.
 
 ### Changed
@@ -18,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rule V7's message for a task line indented one to three spaces names it as one and gives both remedies: column 0 for a task, a payload for a sub-item.
 - `tm list --all` marks pending tasks with `[ ]`, as it marks completed ones with `[x]`, so each line states its task's status. Plain `tm list` and `tm next` are unchanged.
 - `tm move` without `--from` falls back to `active.tm.md` when the task is not in `future.tm.md`, and without `--to` puts the task in the file holding the `--before`/`--after` anchor, so reordering within `active.tm.md` needs no file flags. Its output names the source file when it differs from the destination, and a task-not-found error names the files searched.
+
+### Fixed
+- In a linked worktree nested in its own repository, a committed `.taskmarkrc` no longer makes `tm` look for the task directory inside that worktree when it exists only in the main checkout (an orphan-branch task directory): `tm` uses the main checkout's, as it already did without a `.taskmarkrc`. A task directory that exists in the worktree is still used.
 
 ---
 

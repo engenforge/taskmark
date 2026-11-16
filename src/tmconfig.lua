@@ -97,38 +97,50 @@ function M.load(path)
     return out
 end
 
+-- The main checkout enclosing `dir`, when `dir` is the root of a linked
+-- worktree mounted inside its own repository (.git file pointing to an
+-- ancestor's .git/worktrees/); nil otherwise.
+local function enclosing_main_checkout(dir)
+    local f = io.open(dir .. "/.git", "r")
+    local line = f and f:read("*l") or ""
+    if f then f:close() end
+    local target = line:match("^gitdir:%s*(.-)%s*$")
+    if not target then return nil end
+    if not target:match("^/") then
+        target = tmio.realpath(dir .. "/" .. target) or (dir .. "/" .. target)
+    end
+    local main_repo = target:match("^(.-)/%.git/worktrees/")
+    if not main_repo then return nil end
+    main_repo = tmio.realpath(main_repo) or main_repo
+    if dir:sub(1, #main_repo + 1) == main_repo .. "/" then return main_repo end
+    return nil
+end
+
 -- Whether `dir` is the root of a Git repository or worktree that acts as
 -- a project boundary (stopping upward config discovery).
 -- A standalone repository (.git directory), a submodule (.git file pointing
 -- to modules/), or a worktree whose main checkout is NOT an ancestor of `dir`
 -- are boundaries. A linked worktree mounted inside its own enclosing repository
--- (.git file pointing to an ancestor's .git/worktrees/) is not a boundary: the
--- upward search continues into the enclosing repository holding .taskmarkrc.
+-- is not a boundary: the upward search continues into the enclosing
+-- repository holding .taskmarkrc.
 local function is_git_boundary(dir)
     local git_dir = dir .. "/.git"
-    if tmio.dir_exists(git_dir) then
-        return true
+    if tmio.dir_exists(git_dir) then return true end
+    return tmio.file_exists(git_dir) and enclosing_main_checkout(dir) == nil
+end
+
+-- The main checkout a search upward from `dir` passes into: that of the
+-- nearest linked worktree nested in its own repository, at or above `dir`.
+-- nil when a project boundary or the filesystem root comes first.
+local function main_checkout_above(dir)
+    local cur = dir
+    while cur and cur ~= "" and cur ~= "/" do
+        local main = enclosing_main_checkout(cur)
+        if main then return main end
+        if is_git_boundary(cur) then return nil end
+        cur = cur:match("^(.*)/[^/]+$")
     end
-    if tmio.file_exists(git_dir) then
-        local f = io.open(git_dir, "r")
-        local line = f and f:read("*l") or ""
-        if f then f:close() end
-        local target = line:match("^gitdir:%s*(.-)%s*$")
-        if target then
-            if not target:match("^/") then
-                target = tmio.realpath(dir .. "/" .. target) or (dir .. "/" .. target)
-            end
-            local main_repo = target:match("^(.-)/%.git/worktrees/")
-            if main_repo then
-                main_repo = tmio.realpath(main_repo) or main_repo
-                if dir:sub(1, #main_repo + 1) == main_repo .. "/" then
-                    return false
-                end
-            end
-        end
-        return true
-    end
-    return false
+    return nil
 end
 
 -- Search upward from `start_dir` (default: ".") for `.taskmarkrc`, stopping
@@ -185,28 +197,30 @@ function M.resolve(overrides)
         cfg[key] = overrides[key] or local_cfg[key] or global_cfg[key] or default
     end
 
-    local cwd = tmio.realpath(overrides.start_dir or ".")
-    local in_sub = root_dir and cwd and root_dir ~= cwd
+    -- A relative tasks_dir is looked up in the directory holding
+    -- .taskmarkrc (or the repository root, or the current directory); when
+    -- it is missing there and that directory lies in a linked worktree
+    -- nested in its own repository, in the enclosing main checkout: an
+    -- orphan-branch task directory is mounted only there, while every
+    -- worktree checks out its own copy of a committed .taskmarkrc. An
+    -- unconfigured tasks_dir also tries the legacy directory in each.
+    if not overrides.tasks_dir and not cfg.tasks_dir:match("^[/~]") then
+        local cwd = tmio.realpath(overrides.start_dir or ".")
+        local base = root_dir or cwd
+        local names = { cfg.tasks_dir }
+        if not (local_cfg.tasks_dir or global_cfg.tasks_dir) then names[2] = M.LEGACY_TASKS_DIR end
 
-    if not overrides.tasks_dir and in_sub and not cfg.tasks_dir:match("^/") and not cfg.tasks_dir:match("^~") then
-        if local_cfg.tasks_dir then
-            cfg.tasks_dir = root_dir .. "/" .. cfg.tasks_dir
-        else
-            -- No tasks_dir configured; resolve default/legacy relative to root_dir
-            if tmio.dir_exists(root_dir .. "/" .. cfg.tasks_dir) then
-                cfg.tasks_dir = root_dir .. "/" .. cfg.tasks_dir
-            elseif tmio.dir_exists(root_dir .. "/" .. M.LEGACY_TASKS_DIR) then
-                cfg.tasks_dir = root_dir .. "/" .. M.LEGACY_TASKS_DIR
-            else
-                cfg.tasks_dir = root_dir .. "/" .. cfg.tasks_dir
+        local function path_in(dir, name)
+            return (dir == nil or dir == cwd) and name or (dir .. "/" .. name)
+        end
+        local function existing_in(dir)
+            for _, name in ipairs(names) do
+                if tmio.dir_exists(path_in(dir, name)) then return path_in(dir, name) end
             end
         end
-    else
-        if not (overrides.tasks_dir or local_cfg.tasks_dir or global_cfg.tasks_dir)
-            and not tmio.dir_exists(cfg.tasks_dir)
-            and tmio.dir_exists(M.LEGACY_TASKS_DIR) then
-            cfg.tasks_dir = M.LEGACY_TASKS_DIR
-        end
+
+        local main = base and main_checkout_above(base)
+        cfg.tasks_dir = existing_in(base) or (main and existing_in(main)) or path_in(base, cfg.tasks_dir)
     end
 
     cfg.active_path    = cfg.tasks_dir .. "/" .. cfg.active_file

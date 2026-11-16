@@ -523,10 +523,10 @@ else
         os.execute("rm -rf " .. main)
     end
 
-    -- Tracked layout, pinned as it behaves today: the task files are
-    -- committed on the code branch, so each worktree checks out its own
-    -- .taskmarkrc and task files, and tm uses those. If tm is changed on
-    -- purpose to reach the main checkout's instead, update this case.
+    -- Tracked layout: the task files are committed on the code branch, so
+    -- each worktree checks out its own .taskmarkrc and task files, and tm
+    -- uses those. It reaches for the main checkout's only when the
+    -- worktree has no such directory (the orphan cases below).
     do
         local group = "nested_worktree_tracked"
         local main, ok, setup_out = repo_with_streams("tmconfig_nested_tracked",
@@ -550,6 +550,44 @@ else
 
         os.execute("rm -rf " .. main)
     end
+
+    -- Orphan layout with a committed .taskmarkrc: every worktree checks the
+    -- file out, but the task directory it names is ignored on the code
+    -- branch and mounted only in the main checkout, so tm must use that one.
+    local function orphan_case(group, prepare, init, tasks_dir)
+        local main, ok, setup_out = repo_with_streams("tmconfig_" .. group, prepare)
+        local s1 = main .. "/build/s1"
+        local active = main .. "/" .. tasks_dir .. "/active.tm.md"
+        local out, code = run_cmd(string.format("cd %s && %s", main, init))
+        check(group, "fixture: committed .taskmarkrc, " .. tasks_dir .. " mounted in the main checkout only",
+            ok and code == 0 and read_file(s1 .. "/.taskmarkrc") ~= nil, setup_out .. out)
+        local s1_files = run_cmd("ls -A " .. s1)
+
+        out, code = run_cmd(string.format("cd %s && %s add 'Orphan stream task'", s1, tm))
+        check(group, "tm add from build/s1 adds to the main checkout's " .. tasks_dir,
+            code == 0 and pending(read_file(active) or "") == 1, out)
+
+        run_cmd("mkdir -p " .. s1 .. "/src/deep")
+        out, code = run_cmd(string.format("cd %s/src/deep && %s list", s1, tm))
+        check(group, "tm list from build/s1/src/deep lists the main checkout's tasks",
+            code == 0 and out:find("Orphan stream task", 1, true) ~= nil, out)
+        run_cmd("rm -rf " .. s1 .. "/src")
+
+        check(group, "tm add creates nothing under build/s1", run_cmd("ls -A " .. s1) == s1_files,
+            run_cmd("ls -A " .. s1))
+
+        os.execute("rm -rf " .. main)
+    end
+
+    orphan_case("nested_worktree_orphan_rc",
+        "echo 'tasks_dir: doc/tasks' > .taskmarkrc && echo doc/tasks/ >> .gitignore",
+        "git worktree add -q --detach --no-checkout doc/tasks && " ..
+            "git -C doc/tasks checkout -q --orphan tasks && echo '# Current Sprint' > doc/tasks/active.tm.md",
+        "doc/tasks")
+
+    -- The same when .taskmarkrc sets other keys and leaves tasks_dir at its default.
+    orphan_case("nested_worktree_orphan_default",
+        "echo 'archive_dir: old' > .taskmarkrc", tm .. " init --orphan", ".tasks")
 end
 
 -- ── Summary ─────────────────────────────────────────────────────────────

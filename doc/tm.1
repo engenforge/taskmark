@@ -114,6 +114,22 @@ is removed from the source, so an interrupted move leaves a duplicate,
 never a loss.\& The destination must exist.\&
 .PP
 .RE
+\fBpayload\fR \fI<hash\-or\-pattern>\fR [\-\-append | \-\-replace] [\-\-file \fIFILE\fR] [\-\-tasks\-dir \fIDIR\fR]
+.RS 4
+Print a task'\&s payload on standard output, without its four\-space
+indent.\& With \fB\-\-append\fR, add standard input beneath the payload,
+separated by a blank line; with \fB\-\-replace\fR, put standard input in the
+payload'\&s place.\& The input is payload content without the indent, as
+\fBdedent\fR emits it, so a payload is edited with
+\fBtm payload k7q2x | sed .\&.\&.\& | tm payload k7q2x \-\-replace\fR.\& The task is looked for in \fIactive.\&tm.\&md\fR,
+then \fIfuture.\&tm.\&md\fR (or only in \fB\-\-file\fR), pending or completed.\& The
+write is made under the lock (see FILES), so it cannot discard another
+session'\&s change to the file, as editing the file directly can; prefer
+\fB\-\-append\fR, which also cannot discard a change to the same payload.\&
+Nothing is written when the input is empty or the task would no longer
+pass \fBvalidate\fR.\&
+.PP
+.RE
 \fBsweep\fR
 .RS 4
 Move every `\- [x]` task and its payload out of \fIactive.\&tm.\&md\fR and into
@@ -412,7 +428,7 @@ never hand\-authored.\&
 .RE
 \fI<tasks\-dir>/.\&tm.\&lock\fR
 .RS 4
-Transient lock directory held by \fBadd\fR, \fBid\fR, \fBdone\fR, \fBmove\fR, \fBremap\fR, \fBsweep\fR,
+Transient lock directory held by \fBadd\fR, \fBid\fR, \fBdone\fR, \fBmove\fR, \fBpayload\fR, \fBremap\fR, \fBsweep\fR,
 \fBarchive\fR, and \fBvalidate \-\-fix\fR for the duration of their read\-modify\-write,
 so concurrent \fBtm\fR runs wait for each other instead of losing updates.\&
 A stale lock left by a killed process may be removed by hand.\&
@@ -428,7 +444,9 @@ optional:
 \fI\(ti/.\&config/taskmark/config\fR when unset.\&
 .IP \(bu 4
 \fBLocal\fR — \fI.\&taskmarkrc\fR in the current working directory or discovered
-by searching upward to the enclosing repository root.\&
+by searching upward to the enclosing repository root.\& In a linked worktree
+nested in its own repository, a relative \fItasks_dir\fR that does not exist
+in the worktree is taken from the main checkout.\&
 .PD
 .PP
 .nf

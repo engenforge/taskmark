@@ -9,6 +9,7 @@
 --   tm done <handle-or-pattern> [--git [REV]] [--file FILE] [--tasks-dir DIR]
 --   tm move <handle-or-pattern> [--from FILE] [--to FILE] [--section SECTION] [--tasks-dir DIR]
 --   tm add <task-text> [-p|--priority PRI] [--section SECTION] [--file FILE] [--tasks-dir DIR]
+--   tm payload <handle-or-pattern> [--append|--replace] [--file FILE] [--tasks-dir DIR]
 --
 -- A task's handle is its identifier (§4.3.3, `id:k7q2x` on the task line)
 -- when it has one. Otherwise it is ephemeral and never written to a file:
@@ -25,6 +26,7 @@ local tmio         = require("tmio")
 local tmsweep_core = require("tmsweep_core")
 local tmgit        = require("tmgit")
 local tmid         = require("tmid")
+local tmval        = require("tmval")
 
 local M = {}
 
@@ -576,6 +578,101 @@ function M.stamp(opts)
     end)
 end
 
+-- ── tm payload ────────────────────────────────────────────────────────────
+
+-- A task's payload lines without the four-space payload indent.
+local function payload_of(lines, task)
+    local out = {}
+    for i = task.line + 1, block_end(lines, task) do
+        out[#out + 1] = lines[i]:match("^%s*$") and "" or lines[i]:sub(5)
+    end
+    return out
+end
+
+-- `text` (payload content, unindented) as payload lines, without leading
+-- and trailing blank lines; also the number of leading lines dropped.
+local function payload_lines(text)
+    local raw = tmscan.lines_of(text)
+    local first, last = 1, #raw
+    while first <= last and raw[first]:match("^%s*$") do first = first + 1 end
+    while last >= first and raw[last]:match("^%s*$") do last = last - 1 end
+    local out = {}
+    for i = first, last do
+        out[#out + 1] = raw[i] == "" and "" or ("    " .. raw[i])
+    end
+    return out, first - 1
+end
+
+-- Print, append to, or replace a task's payload. opts: query, file |
+-- tasks_dir, mode ("append" | "replace"; nil reads), text (the new payload
+-- content, unindented, as `tm dedent` emits it). Without opts.file the task
+-- is looked for in active.tm.md, then future.tm.md. The task with its new
+-- payload must pass validation, so a write can never break the document.
+-- Returns true, task, handles, payload (the task's unindented payload
+-- lines when reading); or false, reason, detail.
+function M.payload(opts)
+    local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
+    local files = opts.file and { opts.file } or { cfg.active_path, cfg.future_path }
+
+    local function run()
+        local file, lines, nl, task, handles, failure
+        local readable = false
+        for _, path in ipairs(files) do
+            local path_lines, path_nl = read_file(path)
+            if path_lines then
+                readable = true
+                local tasks = tmscan.tasks(path_lines)
+                local found, err, candidates = M.find_task(tasks, opts.query)
+                if found or err ~= "not_found" then
+                    file, lines, nl, task, handles = path, path_lines, path_nl, found, M.handles(tasks)
+                    if not found then failure = { err, { candidates = candidates, handles = handles } } end
+                    break
+                end
+            end
+        end
+        if not readable then return false, "no such file: " .. files[1] end
+        if failure then return false, failure[1], failure[2] end
+        if not task then return false, "not_found", { searched = files } end
+        if not opts.mode then return true, task, handles, payload_of(lines, task) end
+
+        local new, dropped = payload_lines(opts.text or "")
+        if #new == 0 then return false, "the new payload on standard input is empty; nothing written" end
+
+        local last = block_end(lines, task)
+        local block = { lines[task.line] }
+        if opts.mode == "append" and last > task.line then
+            for i = task.line + 1, last do block[#block + 1] = lines[i] end
+            block[#block + 1] = ""
+        end
+        local kept = #block
+        local errors_before = #tmval.validate_lines(block)
+        for _, l in ipairs(new) do block[#block + 1] = l end
+        local errors = tmval.validate_lines(block)
+        if #errors > errors_before then
+            local msgs = {}
+            for _, e in ipairs(errors) do
+                local where = e.line > kept and ("stdin:" .. (e.line - kept + dropped))
+                    or (file .. ":" .. (task.line + e.line - 1))
+                msgs[#msgs + 1] = string.format("  %s: [%s] %s", where, e.rule, e.msg)
+            end
+            return false, "the payload would not be valid; nothing written:\n" .. table.concat(msgs, "\n")
+        end
+
+        local out = {}
+        for i = 1, task.line - 1 do out[#out + 1] = lines[i] end
+        for _, l in ipairs(block) do out[#out + 1] = l end
+        for i = last + 1, #lines do out[#out + 1] = lines[i] end
+        local ok, werr = write_lines(file, out, nl)
+        if not ok then return false, werr end
+        return true, task, handles
+    end
+
+    if not opts.mode then return run() end
+    local dirs = {}
+    for _, path in ipairs(files) do dirs[#dirs + 1] = dir_of(path) end
+    return with_locks(dirs, run)
+end
+
 -- ── tm next ───────────────────────────────────────────────────────────────
 
 -- The task to start (§5.1): among the pending tasks of the active file
@@ -623,6 +720,9 @@ local USAGE = {
     id   = "Usage: tm id [--tasks-dir DIR] [file...]",
     done = "Usage: tm done [options] [--] <handle-or-pattern>   (options: --git [REV], --file FILE, --tasks-dir DIR)",
     move = "Usage: tm move [options] [--] <handle-or-pattern>   (options: --from FILE, --to FILE, --section SECTION | --before TASK | --after TASK, --tasks-dir DIR)",
+    payload = "Usage: tm payload [options] [--] <handle-or-pattern>   (options: --append | --replace, --file FILE, --tasks-dir DIR)\n" ..
+           "  Prints the task's payload without its four-space indent. --append adds standard input beneath it,\n" ..
+           "  --replace puts standard input in its place; the input is unindented payload content.",
     add  = "Usage: tm add [options] [--] <task-text>   (options: -p|--priority PRI, --section SECTION | --before TASK | --after TASK, --file FILE, --tasks-dir DIR)\n" ..
            "  A new identifier is stamped unless <task-text> already carries one (e.g. id:z0114), which must be unused.",
 }
@@ -696,6 +796,10 @@ function M.run(subcmd, args)
             filter = "pending"
         elseif a == "--all" then
             filter = "all"
+        elseif a == "--append" or a == "--replace" then
+            if subcmd ~= "payload" then tmio.die(a .. " applies only to tm payload\n" .. USAGE[subcmd]) end
+            if opts.mode then tmio.die("give --append or --replace, not both\n" .. USAGE.payload) end
+            opts.mode = a:sub(3)
         elseif a == "--git" then
             git_flag, git_at = true, #positionals + 1
         elseif a:match("^%-%-git=") then
@@ -823,6 +927,21 @@ function M.run(subcmd, args)
         })
         if not ok then report_failure(query, res, detail) end
         print(string.format("Completed: [%s] %s", handle_of(res, detail), res.summary))
+        os.exit(0)
+    end
+
+    if subcmd == "payload" then
+        local ok, res, detail, payload = M.payload({
+            query = query, file = opts.file, tasks_dir = opts.tasks_dir, mode = opts.mode,
+            text = opts.mode and io.read("*a") or nil,
+        })
+        if not ok then report_failure(query, res, detail) end
+        if opts.mode then
+            print(string.format("%s: [%s] %s", opts.mode == "append" and "Appended" or "Replaced",
+                handle_of(res, detail), res.summary))
+        elseif #payload > 0 then
+            io.write(table.concat(payload, "\n"), "\n")
+        end
         os.exit(0)
     end
 
