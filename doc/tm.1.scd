@@ -166,8 +166,8 @@ the current working directory (the layout described by the spec).
 	With *list*: output only pending tasks (the default).
 
 *--all*
-	With *list*: output both pending and completed tasks. Completed tasks are
-	marked with `[x]`.
+	With *list*: output both pending and completed tasks. Each task is
+	marked with its checkbox (`[ ]` pending, `[x]` completed).
 
 *--not* _TAG_
 	With *list* and *next*: leave out tasks whose line carries _TAG_

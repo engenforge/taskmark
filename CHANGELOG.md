@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- `tm list --all` marks pending tasks with `[ ]`, as it marks completed ones with `[x]`, so each line states its task's status. Plain `tm list` and `tm next` are unchanged.
 - `tm move` without `--from` falls back to `active.tm.md` when the task is not in `future.tm.md`, and without `--to` puts the task in the file holding the `--before`/`--after` anchor, so reordering within `active.tm.md` needs no file flags. Its output names the source file when it differs from the destination, and a task-not-found error names the files searched.
 
 ---
