@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.6.0] - 2026-11-16
+
 ### Added
 - `tm validate` emits non-fatal `[WARN]` lines for a malformed `Claimed` value (not starting with `YYYY-MM-DD`) and for a second `Claimed` field on one pending task.
 - `tm list --claimed` and `tm list --unclaimed` narrow the listing to pending tasks with or without a `Claimed` field.
