@@ -409,6 +409,149 @@ do
     os.execute("rm -rf " .. dir .. " " .. outer)
 end
 
+-- ── Code worktrees nested in their own repository ───────────────────────
+--
+-- Parallel work streams run as linked worktrees inside the main checkout
+-- (build/<name>), and tm run there with no path arguments must use the
+-- main checkout's .tasks: such a worktree is not a project boundary.
+
+if not HAVE_GIT then
+    print("[SKIP] nested_worktree: git is not installed")
+else
+    local tm = "lua " .. io.popen("realpath " .. script_dir .. "/../src/tm"):read("*l")
+
+    local function count(text, pattern)
+        local n = 0
+        for _ in ("\n" .. text):gmatch("\n%s*" .. pattern) do n = n + 1 end
+        return n
+    end
+    local function pending(text) return count(text, "%- %[ %]") end
+    local function completed(text) return count(text, "%- %[x%]") end
+
+    -- A repository with one commit and two linked worktrees, build/s1 and
+    -- build/s2, on their own branches; `prepare` runs in the main checkout
+    -- before the commit.
+    local function repo_with_streams(prefix, prepare)
+        local main = make_temp_dir(prefix)
+        local out, code = run_cmd(string.format(
+            "cd %s && git init -q -b main && echo build/ > .gitignore && echo code > app.c && %s && " ..
+            "git add . && git commit -q -m init && " ..
+            "git worktree add -q -b stream/s1 build/s1 && git worktree add -q -b stream/s2 build/s2",
+            main, prepare or "true"))
+        return main, code == 0, out
+    end
+
+    -- Start every command at once, each from its own directory, and wait
+    -- for all of them.
+    local function run_concurrently(jobs)
+        local parts = {}
+        for _, job in ipairs(jobs) do
+            parts[#parts + 1] = string.format("(cd %s && %s) &", job[1], job[2])
+        end
+        return run_cmd("( " .. table.concat(parts, " ") .. " wait )")
+    end
+
+    do
+        local group = "nested_worktree"
+        local main, ok, setup_out = repo_with_streams("tmconfig_nested")
+        local s1, s2 = main .. "/build/s1", main .. "/build/s2"
+        local active = main .. "/.tasks/active.tm.md"
+        local out, code = run_cmd(string.format("cd %s && %s init --orphan", main, tm))
+        check(group, "fixture: one commit, tm init --orphan, worktrees build/s1 and build/s2",
+            ok and code == 0, setup_out .. out)
+        local s1_files = run_cmd("ls -A " .. s1)
+
+        out, code = run_cmd(string.format("cd %s && %s add 'Stream one task'", s1, tm))
+        check(group, "tm add from build/s1 adds to the main checkout's active file",
+            code == 0 and pending(read_file(active) or "") == 1, out)
+
+        out, code = run_cmd(string.format("cd %s && %s list", s1, tm))
+        check(group, "tm list from build/s1 lists the main checkout's tasks",
+            code == 0 and out:find("Stream one task", 1, true) ~= nil, out)
+
+        out, code = run_cmd(string.format("cd %s && %s next", s1, tm))
+        check(group, "tm next from build/s1 picks from the main checkout's tasks",
+            code == 0 and out:find("Stream one task", 1, true) ~= nil, out)
+
+        out, code = run_cmd(string.format("cd %s && %s validate", s1, tm))
+        check(group, "tm validate from build/s1 validates the main checkout's active file",
+            code == 0 and out:find("/.tasks/active.tm.md", 1, true) ~= nil
+                and out:find("/build/", 1, true) == nil, out)
+
+        out, code = run_cmd(string.format("cd %s && %s done 'Stream one task'", s1, tm))
+        local body = read_file(active) or ""
+        check(group, "tm done from build/s1 completes the task in the main checkout",
+            code == 0 and completed(body) == 1 and pending(body) == 0, out)
+
+        check(group, "tm add and tm done create nothing under build/s1",
+            run_cmd("ls -A " .. s1) == s1_files and run_cmd("git -C " .. s1 .. " status --porcelain") == "",
+            run_cmd("ls -A " .. s1))
+
+        out, code = run_cmd(string.format("cd %s && %s sync -m 'tasks: from stream one'", s1, tm))
+        local tasks_subject = run_cmd("git -C " .. main .. " log -1 --format=%s tasks")
+        local stream_commits = run_cmd("git -C " .. main .. " rev-list --count stream/s1")
+        check(group, "tm sync from build/s1 commits to the tasks branch",
+            code == 0 and tasks_subject:match("^tasks: from stream one") ~= nil, out .. tasks_subject)
+        check(group, "tm sync from build/s1 commits nothing to the stream branch",
+            stream_commits:match("^1%s*$") ~= nil, stream_commits)
+
+        -- Concurrent writers from both worktrees.
+        run_cmd(string.format("cd %s && %s add 'Finish while others add'", s2, tm))
+        local jobs = { { s2, tm .. " done 'Finish while others add'" } }
+        for i = 1, 3 do
+            jobs[#jobs + 1] = { s1, string.format("%s add 'Concurrent s1 task %d'", tm, i) }
+            jobs[#jobs + 1] = { s2, string.format("%s add 'Concurrent s2 task %d'", tm, i) }
+        end
+        out = run_concurrently(jobs)
+        body = read_file(active) or ""
+        check(group, "concurrent tm add and tm done from build/s1 and build/s2 all land",
+            pending(body) == 6 and completed(body) == 2
+                and count(body, "%- %[ %] Concurrent s1 task") == 3
+                and count(body, "%- %[ %] Concurrent s2 task") == 3
+                and count(body, "%- %[x%] Finish while others add") == 1, out .. body)
+        out, code = run_cmd(string.format("cd %s && %s validate", s1, tm))
+        check(group, "active file passes tm validate after concurrent writers", code == 0, out)
+
+        -- These check that both worktrees reach the same tasks worktree and
+        -- that nothing is dropped; they do not guard tm sync's staging lock.
+        out = run_concurrently({ { s1, tm .. " sync -m 'tasks: s1'" }, { s2, tm .. " sync -m 'tasks: s2'" } })
+        local status = run_cmd("git -C " .. main .. "/.tasks status --porcelain")
+        local committed = run_cmd("git -C " .. main .. " show tasks:active.tm.md")
+        check(group, "two concurrent tm sync leave the tasks worktree clean", status == "", out .. status)
+        check(group, "two concurrent tm sync commit every concurrent change", committed == body, committed)
+
+        os.execute("rm -rf " .. main)
+    end
+
+    -- Tracked layout, pinned as it behaves today: the task files are
+    -- committed on the code branch, so each worktree checks out its own
+    -- .taskmarkrc and task files, and tm uses those. If tm is changed on
+    -- purpose to reach the main checkout's instead, update this case.
+    do
+        local group = "nested_worktree_tracked"
+        local main, ok, setup_out = repo_with_streams("tmconfig_nested_tracked",
+            "echo 'tasks_dir: doc/tasks' > .taskmarkrc && mkdir -p doc/tasks && " ..
+            "echo '# Current Sprint' > doc/tasks/active.tm.md")
+        local s1 = main .. "/build/s1"
+        local main_active = main .. "/doc/tasks/active.tm.md"
+        local s1_active = s1 .. "/doc/tasks/active.tm.md"
+        check(group, "fixture: committed .taskmarkrc with tasks_dir: doc/tasks", ok, setup_out)
+
+        local out, code = run_cmd(string.format("cd %s && %s add 'Tracked stream task'", s1, tm))
+        check(group, "tm add from build/s1 writes the worktree's own doc/tasks",
+            code == 0 and (read_file(s1_active) or ""):find("Tracked stream task", 1, true) ~= nil, out)
+        check(group, "tm add from build/s1 leaves the main checkout's doc/tasks alone",
+            pending(read_file(main_active) or "") == 0, read_file(main_active))
+
+        out, code = run_cmd(string.format("cd %s && %s add --tasks-dir %s/doc/tasks 'Tracked main task'", s1, tm, main))
+        check(group, "--tasks-dir <main>/doc/tasks from build/s1 reaches the main checkout's",
+            code == 0 and (read_file(main_active) or ""):find("Tracked main task", 1, true) ~= nil
+                and (read_file(s1_active) or ""):find("Tracked main task", 1, true) == nil, out)
+
+        os.execute("rm -rf " .. main)
+    end
+end
+
 -- ── Summary ─────────────────────────────────────────────────────────────
 
 print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))
