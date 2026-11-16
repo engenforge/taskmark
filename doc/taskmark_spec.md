@@ -9,7 +9,7 @@ date: 2026-11-12
 
 Taskmark is a deterministic, multi-line, plain-text task format designed to work with any text editor and with automated stream-parsing tools. It takes the single-line simplicity of `todo.txt` and adds an attached block of arbitrary context beneath each task. It relies on strict structural anchors — a fixed task token, a fixed payload indent, and pure CommonMark block separation — so that conforming tools never need to build an abstract syntax tree.
 
-SPEC-TASKMARK-05 extends SPEC-TASKMARK-04 without changing its grammar or its validator rules: every SPEC-TASKMARK-04 document conforms unchanged. It adds the optional task identifier (§4.3.3) and the `Depends` field (§4.4.2), and states the order of work and how a session selects a task (§5.1).
+SPEC-TASKMARK-05 extends SPEC-TASKMARK-04 without changing its grammar or its validator rules: every SPEC-TASKMARK-04 document conforms unchanged. It adds the optional task identifier (§4.3.3), the `Depends` and `Claimed` fields (§4.4.2), and states the order of work, how a session selects a task (§5.1), and how a session claims one (§5.1.1).
 
 ## 1. Conformance and Notation
 
@@ -52,7 +52,7 @@ A conforming validator MUST reject a strict-profile document for each of the fol
 | V13 | Top-level prose directly following a task line or payload line without an intervening blank line | 4.4.5 |
 | V14 | A leading frontmatter block (`---` … `---`) | 2.2 |
 
-A validator MAY emit non-fatal warnings beyond this list — an unrecognized labeled-field key, a malformed date, a second `**Key:**` inside a field's value (§4.4.2), an identifier carried by two tasks (§4.3.3) — but MUST NOT fail the document for them. Field-level conventions such as tag placement (§4.3.2) and labeled-field placement (§4.4.2) are never enforced.
+A validator MAY emit non-fatal warnings beyond this list — an unrecognized labeled-field key, a malformed date or `Claimed` value, a second `**Key:**` inside a field's value (§4.4.2), an identifier carried by two tasks (§4.3.3) — but MUST NOT fail the document for them. Field-level conventions such as tag placement (§4.3.2) and labeled-field placement (§4.4.2) are never enforced.
 
 ## 2. File Format and Structure
 
@@ -141,7 +141,7 @@ priority := "(" [A-Z] ") "
 * **Completed token:** `^- \[x\] ` — identical but with a lowercase `x`. Uppercase `X` is not accepted.
 * The token is exactly six characters. Note that CommonMark sees only the leading `- ` as the list marker: `[ ]` is ordinary content that a renderer's task-list extension converts to a checkbox afterwards. The item's content column is therefore 2, which is what sets the payload indent in §4.4.1 — not the width of the token.
 
-**All machine-readable metadata on a task lives on this one line.** Tools MUST NOT scan payload lines for tags, priority flags, or a task's own identifier. The one payload content a tool reads for selection is a `Depends` field (§4.4.2): it names *other* tasks, by the identifier on their own task lines, and is read as a labeled field, never by searching the payload's text. A payload may contain a pasted JSON body, a stack trace, or a git log excerpt; treating those as metadata would silently poison every query. Confining the searchable surface to the task line also keeps filtering stateless — a filter evaluates one line and either emits it or drops it, with nothing buffered.
+**All machine-readable metadata on a task lives on this one line.** Tools MUST NOT scan payload lines for tags, priority flags, or a task's own identifier. The only payload content a tool reads for selection are the `Depends` and `Claimed` fields (§4.4.2): `Depends` names *other* tasks by the identifier on their own task lines, and `Claimed` marks a task already taken by a session; both are read as labeled fields, never by searching the payload's text. A payload may contain a pasted JSON body, a stack trace, or a git log excerpt; treating those as metadata would silently poison every query. Confining the searchable surface to the task line also keeps filtering stateless — a filter evaluates one line and either emits it or drops it, with nothing buffered.
 
 #### 4.3.1 Priority Flag (optional)
 
@@ -246,14 +246,17 @@ Registered keys:
 | `Created` | `YYYY-MM-DD` | when the task was first entered |
 | `Due` | `YYYY-MM-DD` | target completion date |
 | `Depends` | one or more task identifiers (`id:k7q2x`, §4.3.3), optionally with free text | tasks that must be completed before this one can start; §5.1 |
+| `Claimed` | `YYYY-MM-DD`, optionally followed by free text naming the claimant | task is currently claimed by a session; §5.1.1 |
 | `Context` | free text, one line | why the task matters |
 | `Notes` | free text, one line | working detail |
 
 **All task dates are labeled fields.** `Created`, `Due`, and `Completed` are the canonical and only forms this specification defines for the dates they name; there is no inline date syntax on the task line. One date convention, expressed one way, keeps extraction to a single pattern and keeps the task line reserved for the metadata that filtering and sorting actually use (§4.3).
 
-Additional keys are permitted; a tool that does not recognize a key MUST preserve it and MUST NOT fail on it. Only `Completed` and `Depends` carry lifecycle meaning (§5).
+Additional keys are permitted; a tool that does not recognize a key MUST preserve it and MUST NOT fail on it. Only `Completed`, `Depends`, and `Claimed` carry lifecycle meaning (§5).
 
 **Reading `Depends`.** A tool takes every `id:` word in the value as a dependency and ignores everything else, so a reason may sit beside a blocker: `> **Depends:** id:z0135 (stage1 builds the closure wrong)`. Free text is never a dependency, and "an identifier no task carries" (§5.1) means an `id:` word that names no task, never a stray word. A condition that is not a task — "a release cycle with no disagreement" — may be written there for people, but no tool checks it; a blocker that must stop selection has to be a task with an identifier.
+
+**Reading `Claimed`.** A `Claimed` field (`> **Claimed:** 2026-11-16 stream/s1`) records that a session has taken the task. Its value begins with `YYYY-MM-DD`, optionally followed by free text naming the claimant. The claimant is for people; no tool compares or interprets it.
 
 #### 4.4.3 Freeform Content
 
@@ -302,15 +305,26 @@ This section describes the working practices Taskmark is shaped around and the o
 
 ### 5.1 Session Start
 
-At the beginning of a working session, read `.tasks/active.tm.md` and choose the first pending (`- [ ]`) task that has no unmet dependencies and suits the session. Consult `future.tm.md` when context on upcoming work is needed. The reference CLI's `tm next` makes this selection.
+At the beginning of a working session, read `.tasks/active.tm.md` and choose the first pending (`- [ ]`) task that is unclaimed, has no unmet dependencies, and suits the session. Consult `future.tm.md` when context on upcoming work is needed. The reference CLI's `tm next` makes this selection.
 
 * **Position is the order of work.** Tasks are taken from the top of the file down, across headings. To change the order, move the task.
 * **A priority flag is the exception.** A task with a priority flag (§4.3.1) is taken ahead of position: flagged tasks come before unflagged ones, `A` first, and position decides among tasks with the same flag.
+* **Claimed tasks.** A pending task with a `Claimed` field (§4.4.2) is passed over by selection for every session, its claimant included. A claim does not satisfy or block a `Depends`: a dependency is unmet until the task it names is `- [x]`. `Claimed` on a completed task or in `future.tm.md` means nothing.
 * **Dependencies.** A task's `Depends` field (§4.4.2) names the tasks that must be completed before it can start. A dependency is unmet until the task it names is `- [x]`, in any task file, the archive included. A reference to an identifier that no task carries is also unmet — it is most likely a typing error — and tools SHOULD report it.
 * **State the order once.** Order SHOULD NOT be restated in prose, in numbered lists, or in payload notes ("before X", "after Y"): the copies go stale and then contradict the file. `Depends` is for a hard blocker only — a task that cannot be started — not for a preferred sequence, which position already expresses.
 * **Suiting the session.** Tags (§4.3.2) narrow the choice: a session working in one context takes the first task that carries its tag (`tm next @backend`). The same mechanism covers work that is finished but awaiting review, with no third task state: the author adds `@review` to the task line and leaves the task pending; an implementing session passes over it (`tm next --not @review`), a reviewing session selects it (`tm list @review`), and the reviewer completes it. A review that finds the work incomplete sends it back the same way: the reviewer records the finding in the payload and removes `@review`, and the task rejoins the queue at its position.
 * **Headings do not gate selection.** Selection reads the whole file, so once the tasks under the first heading are done or blocked, the next one comes from the heading below. A project that wants later work held back until someone promotes it keeps that work in `future.tm.md` (§5.4), which selection never reads.
 * **Placing a new task.** Since position is the order, a new task goes where it should be done: immediately before the first task it blocks, directly after the task it follows up, otherwise at the end of the queue — or in `future.tm.md` when it is not scheduled soon. Adding a task SHOULD NOT reorder the tasks already there; who may reorder is the project's decision, and a project with several authors does well to name one. The reference CLI places a task this way with `tm add --before <task>` or `--after <task>`, and `tm move` takes the same options.
+
+#### 5.1.1 Claiming a Task
+
+When parallel sessions share one task directory — such as linked Git worktrees sharing the main checkout's `.tasks/` — a session claims a task before starting work so that another session's selection passes over it.
+
+* **Atomic selection and claim.** Selecting a task and stamping its `Claimed` field MUST happen in one step under the tool's lock (`tm next --claim`). Selecting first and claiming afterward leaves a window in which two sessions read the same task and both begin work on it.
+* **Lifecycle of a claim.** Completing a task removes its `Claimed` field in the same write that stamps `Completed` (§5.2), so a completed record never carries a stale claim. Releasing a task (`tm release`) removes the `Claimed` field without completing it, returning it to the queue.
+* **No automatic expiry.** A claim never expires by rule: selection must not depend on the clock, and a slow task must not be silently handed to a second session. A stale claim — left by an abandoned or crashed session — is released by a person or by the session that resumes it.
+* **Limits.** A claim is visible immediately to sessions sharing one task directory on disk, and to other clones only after the task branch is committed and pushed (§10.2). It therefore does not arbitrate between independent clones.
+* **Why a `Claimed` field.** Taskmark represents a claim as a labeled field rather than a tag or a third task token: a tag such as `@claimed` has no value to carry the date and claimant, alters the task line that commits cite and text-derived handles hash, and would assign one tag a lifecycle meaning the grammar denies tags (§4.3.2); a third token such as `- [~]` would break the grammar, CommonMark checkbox rendering, and every existing reader. `@review` remains a tag because it is a queue a person filters on, not a lock.
 
 ### 5.2 Completing a Task
 

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tm list`, `tm next`, `tm id`, `tm add`, `tm done`, `tm move` and `tm sweep` warn on standard error when a task file holds a task line indented one to three spaces, which they do not read as a task. Standard output and the exit status are unchanged.
 
 ### Changed
+- **Specification (SPEC-TASKMARK-05):** registers the `Claimed` labeled field (§4.4.2) to record that a session has taken a task (`> **Claimed:** YYYY-MM-DD [claimant]`). §4.3 notes that `Claimed` joins `Depends` as payload content selection reads; §5.1 states that selection passes over claimed tasks for every session and that a claim neither satisfies nor blocks `Depends`; §5.1.1 defines atomic selection and claiming under lock, claim removal on completion or release, no automatic expiry, visibility limits across clones, and why a labeled field is used; §1.5 lists a malformed `Claimed` value among validator warnings.
 - `tm validate --fix` says so when it could not repair a file and wrote nothing, after the file's original errors.
 - `tm validate --fix` leaves a 1–3 space indented checkbox line after a blank line alone so the file fails with V7 and writes nothing, while one directly beneath a task still becomes a bullet in that task's payload.
 - Rule V7's message for a task line indented one to three spaces names it as one and gives both remedies: column 0 for a task, a payload for a sub-item.
