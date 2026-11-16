@@ -32,19 +32,6 @@ M.MIN_HANDLE = 4
 
 -- ── File and document helpers ─────────────────────────────────────────────
 
-local function read_file(path)
-    local f = io.open(path, "r")
-    if not f then return nil end
-    local content = f:read("*a")
-    f:close()
-    return tmscan.lines_of(content), tmscan.detect_newline(content)
-end
-
-local function write_lines(path, lines, nl)
-    lines = tmsweep_core.normalize_blank_lines(lines)
-    return tmio.write_file_atomic(path, table.concat(lines, nl) .. nl)
-end
-
 local function dir_of(path)
     return path:match("^(.*)/[^/]+$") or "."
 end
@@ -60,6 +47,21 @@ end
 local function canonical_file(path)
     local resolved = tmio.resolve_symlinks(path)
     return canonical_dir(dir_of(resolved)) .. "/" .. (resolved:match("([^/]+)$") or resolved)
+end
+
+local function read_file(path, warned)
+    local f = io.open(path, "r")
+    if not f then return nil end
+    local content = f:read("*a")
+    f:close()
+    local lines = tmscan.lines_of(content)
+    tmio.warn_indented_tasks(path, lines, warned, warned and canonical_file(path))
+    return lines, tmscan.detect_newline(content)
+end
+
+local function write_lines(path, lines, nl)
+    lines = tmsweep_core.normalize_blank_lines(lines)
+    return tmio.write_file_atomic(path, table.concat(lines, nl) .. nl)
 end
 
 -- Whether two existing paths name the same file. Either check suffices:
@@ -267,13 +269,13 @@ local function has_tags(summary, tags, not_tags)
 end
 
 -- Compact one-line-per-task listing of a file. opts.filter: "pending"
--- (default) or "all"; opts.tags / opts.not_tags: tags a task must / must
+-- (default) or "all", which also shows each task's checkbox; opts.tags / opts.not_tags: tags a task must / must
 -- not carry. Returns the lines, or nil, reason.
 function M.format_list(file_or_lines, opts)
     opts = opts or {}
     local lines = file_or_lines
     if type(file_or_lines) == "string" then
-        lines = read_file(file_or_lines)
+        lines = read_file(file_or_lines, opts.warned)
         if not lines then return nil, "no such file: " .. file_or_lines end
     end
     local tasks = tmscan.tasks(lines)
@@ -282,10 +284,10 @@ function M.format_list(file_or_lines, opts)
     for _, t in ipairs(tasks) do
         if not has_tags(t.summary, opts.tags, opts.not_tags) then
             -- filtered out
+        elseif opts.filter == "all" then
+            out[#out + 1] = string.format("[%s] [%s] %s", handles[t], t.done and "x" or " ", t.summary)
         elseif not t.done then
             out[#out + 1] = string.format("[%s] %s", handles[t], t.summary)
-        elseif opts.filter == "all" then
-            out[#out + 1] = string.format("[%s] [x] %s", handles[t], t.summary)
         end
     end
     return out
@@ -368,17 +370,17 @@ end
 -- ── tm move ───────────────────────────────────────────────────────────────
 
 -- The tasks of the document at `path`, or nil when it cannot be read.
-local function tasks_of(path)
-    local lines = read_file(path)
+local function tasks_of(path, warned)
+    local lines = read_file(path, warned)
     return lines and tmscan.tasks(lines)
 end
 
 -- The document a move with no --from takes its task from: future.tm.md,
 -- unless the task is not there but is in active.tm.md. Returns the path
 -- and the paths that were searched.
-local function infer_source(cfg, query)
+local function infer_source(cfg, query, warned)
     local function matches(path)
-        local tasks = tasks_of(path)
+        local tasks = tasks_of(path, warned)
         if not tasks then return false end
         local task, reason = M.find_task(tasks, query)
         return task ~= nil or reason ~= "not_found"
@@ -393,11 +395,11 @@ end
 -- The document a move with no --to puts the task in: the one holding the
 -- --before/--after anchor when exactly one of active.tm.md and
 -- future.tm.md does, else active.tm.md.
-local function infer_destination(cfg, anchor)
+local function infer_destination(cfg, anchor, warned)
     if not anchor then return cfg.active_path end
     local holders = {}
     for _, path in ipairs({ cfg.active_path, cfg.future_path }) do
-        local tasks = tasks_of(path)
+        local tasks = tasks_of(path, warned)
         if tasks and (M.find_task(tasks, anchor)) then holders[#holders + 1] = path end
     end
     return #holders == 1 and holders[1] or cfg.active_path
@@ -413,14 +415,15 @@ end
 function M.move(opts)
     local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
     local anchor = opts.before or opts.after
+    local warned = {}
     local from, searched = opts.from, { opts.from }
-    if not from then from, searched = infer_source(cfg, opts.query) end
-    local to = opts.to or infer_destination(cfg, anchor)
+    if not from then from, searched = infer_source(cfg, opts.query, warned) end
+    local to = opts.to or infer_destination(cfg, anchor, warned)
 
     return with_locks({ dir_of(from), dir_of(to) }, function()
-        local src, src_nl = read_file(from)
+        local src, src_nl = read_file(from, warned)
         if not src then return false, "no such file: " .. from end
-        local dest, dest_nl = read_file(to)
+        local dest, dest_nl = read_file(to, warned)
         if not dest then return false, "no such file: " .. to end
         local same = same_file(from, to)
 
@@ -767,8 +770,9 @@ function M.run(subcmd, args)
     if subcmd == "list" then
         local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
         local files = #positionals > 0 and positionals or { cfg.active_path }
+        local warned = #files > 1 and {} or nil
         for idx, f in ipairs(files) do
-            local items, err = M.format_list(f, { filter = filter, tags = tags, not_tags = not_tags })
+            local items, err = M.format_list(f, { filter = filter, tags = tags, not_tags = not_tags, warned = warned })
             if not items then tmio.die(err) end
             if #files > 1 then
                 if idx > 1 then print("") end

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `tm list`, `tm next`, `tm id`, `tm add`, `tm done`, `tm move` and `tm sweep` warn on standard error when a task file holds a task line indented one to three spaces, which they do not read as a task. Standard output and the exit status are unchanged.
+
 ### Changed
 - `tm validate --fix` says so when it could not repair a file and wrote nothing, after the file's original errors.
 - `tm validate --fix` leaves a 1–3 space indented checkbox line after a blank line alone so the file fails with V7 and writes nothing, while one directly beneath a task still becomes a bullet in that task's payload.

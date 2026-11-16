@@ -48,13 +48,14 @@ Options:
   -h, --help      Show this help
 ]=]
 
-local function read_file_content(path)
+local function read_file_content(path, warned)
     local f = io.open(path, "r")
     if not f then return nil, nil end
     local content = f:read("*a")
     f:close()
     local nl = tmscan.detect_newline(content)
     local lines = tmscan.lines_of(content)
+    tmio.warn_indented_tasks(path, lines, warned)
     return lines, nl
 end
 
@@ -128,17 +129,19 @@ local function M_run(args)
     end
     local tasks_dir_resolved = completed_path:match("^(.*)/[^/]+$") or "."
 
+    local warned = {}
+
     -- Sweep: move completed tasks from active into completed, newest first,
     -- under the --sprint label or the current month. Returns true if
     -- anything moved (or would, under --dry-run).
     local function do_sweep()
-        local active_lines, active_nl = read_file_content(active_path)
+        local active_lines, active_nl = read_file_content(active_path, warned)
         if not active_lines then die("no such file: " .. active_path) end
         if not file_exists(completed_path) then
             die("no such file: " .. completed_path ..
                 " (nothing to sweep into; create it or run against an explicit path)")
         end
-        local completed_lines, completed_nl = read_file_content(completed_path)
+        local completed_lines, completed_nl = read_file_content(completed_path, warned)
         if not completed_lines then die("no such file: " .. completed_path) end
 
         local new_active, moved = core.sweep(active_lines)
@@ -182,7 +185,7 @@ local function M_run(args)
     end
 
     local function do_archive()
-        local completed_lines, completed_nl = read_file_content(completed_path)
+        local completed_lines, completed_nl = read_file_content(completed_path, warned)
         if not completed_lines then die("no such file: " .. completed_path) end
 
         local now = os.date("!%Y-%m-%dT%H:%M:%SZ")
@@ -223,7 +226,7 @@ local function M_run(args)
             local year_dir = tasks_dir_resolved .. "/" .. cfg.archive_dir .. "/" .. group.year
             if not mkdir_p(year_dir) then die("cannot create directory: " .. year_dir) end
             local archive_path = year_dir .. "/" .. group.year .. "-" .. group.month .. ".tm.md"
-            local archive_lines, archive_nl = read_file_content(archive_path)
+            local archive_lines, archive_nl = read_file_content(archive_path, warned)
             local write_nl = archive_nl or completed_nl or "\n"
             if not archive_lines then
                 archive_lines = {

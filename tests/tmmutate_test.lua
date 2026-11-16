@@ -152,6 +152,10 @@ do
     local all_items = tmmutate.format_list(file, { filter = "all" })
     check("list", "all filter lists both pending and done tasks", #all_items == 3)
     check("list", "all filter marks done tasks with [x]", all_items[2]:match("^%[%x%x%x%x%] %[x%] %(B%) Task two done") ~= nil)
+    check("list", "all filter marks pending tasks with [ ]",
+        all_items[1]:match("^%[%x%x%x%x%] %[ %] %(A%) Task one pending") ~= nil
+            and all_items[3]:match("^%[%x%x%x%x%] %[ %] Task three pending") ~= nil, all_items[1])
+    check("list", "pending filter leaves pending tasks unmarked", not pending[1]:find("[ ]", 1, true), pending[1])
 
     cleanup_dir(tmp)
 end
@@ -1037,6 +1041,74 @@ do
     out, code = tm_in(tmp, "move ccccc --before aaaaa")
     check("move-infer", "same-file move does not mention a source",
         code == 0 and out:find("Moved:", 1, true) ~= nil and out:find("from", 1, true) == nil, out)
+    cleanup_dir(tmp)
+end
+
+-- ── Indented task line warning across list, next, id, add, done, move ──────
+
+do
+    local tmp = make_temp_dir()
+    git_repo(tmp)
+    assert(tm_in(tmp, "init") and true)
+    local active = tmp .. "/.tasks/active.tm.md"
+    local future = tmp .. "/.tasks/future.tm.md"
+    write(active, "# Sprint\n\n  - [ ] Indented task id:abcde\n")
+    write(future, "# Planned\n\n- [ ] Planned task\n")
+
+    local function run_split(args)
+        local out_f, err_f = tmp .. "/stdout.txt", tmp .. "/stderr.txt"
+        local p = io.popen(string.format("cd %s && lua %s %s >%s 2>%s; echo $?",
+            tmio.shell_quote(tmp), tm_abs, args, tmio.shell_quote(out_f), tmio.shell_quote(err_f)))
+        local code = tonumber(p:read("*a"):match("(%d+)")) or -1
+        p:close()
+        return read(out_f) or "", read(err_f) or "", code
+    end
+
+    local function has_warn(err)
+        return err:find("active.tm.md:3", 1, true) ~= nil and err:find("tm validate", 1, true) ~= nil
+            and err:find("was skipped", 1, true) == nil
+    end
+    local function count_substr(s, sub)
+        local n, i = 0, 1
+        while true do
+            local j = s:find(sub, i, true)
+            if not j then return n end
+            n, i = n + 1, j + #sub
+        end
+    end
+
+    local out, err, code = run_split("list")
+    check("indented-warn", "list warns on stderr, keeps stdout empty and exits 0",
+        code == 0 and out == "" and has_warn(err), "err=" .. err .. " out=" .. out)
+
+    out, err, code = run_split("next")
+    check("indented-warn", "next warns on stderr, keeps stdout clean and exits 0",
+        code == 0 and out == "" and has_warn(err), "err=" .. err .. " out=" .. out)
+
+    out, err, code = run_split("id")
+    check("indented-warn", "id warns on stderr and exits 0",
+        code == 0 and has_warn(err), "err=" .. err)
+
+    out, err, code = run_split('add "New task"')
+    check("indented-warn", "add warns on stderr, writes stdout and exits 0",
+        code == 0 and out:find("Added:", 1, true) ~= nil and has_warn(err), "err=" .. err .. " out=" .. out)
+
+    out, err, code = run_split('done "New task"')
+    check("indented-warn", "done warns on stderr, writes stdout and exits 0",
+        code == 0 and out:find("Completed:", 1, true) ~= nil and has_warn(err), "err=" .. err .. " out=" .. out)
+
+    out, err, code = run_split('move "Planned task"')
+    check("indented-warn", "move warns on stderr, writes stdout and exits 0",
+        code == 0 and out:find("Moved:", 1, true) ~= nil and has_warn(err), "err=" .. err .. " out=" .. out)
+    check("indented-warn", "move warns once per file for active.tm.md",
+        count_substr(err, "active.tm.md:3") == 1, "err=" .. err)
+
+    -- Same-file move with --before also warns only once per file
+    out, err, code = run_split('add "Second task"')
+    out, err, code = run_split('move "Second task" --before "Planned task"')
+    check("indented-warn", "same-file move with --before warns once per file",
+        code == 0 and count_substr(err, "active.tm.md:3") == 1, "err=" .. err)
+
     cleanup_dir(tmp)
 end
 

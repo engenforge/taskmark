@@ -671,6 +671,26 @@ do
     check("cli", "no action given: non-zero exit", code ~= 0)
 end
 
+do
+    -- Indented task lines warn on stderr while leaving stdout and exit status unchanged.
+    local dir = tmpdir()
+    write_file(dir .. "/active.tm.md", "# Current Sprint\n\n  - [x] Indented done\n")
+    write_file(dir .. "/completed.tm.md", "# Completed Archive\n")
+    local out_f, err_f = dir .. "/stdout.txt", dir .. "/stderr.txt"
+    local p = io.popen(string.format("lua %s/src/tmsweep.lua --sweep %s/active.tm.md >%s 2>%s; echo $?",
+        script_dir .. "/..", dir, out_f, err_f))
+    local code = tonumber(p:read("*a"):match("(%d+)")) or -1
+    p:close()
+    local out = read_file(out_f) or ""
+    local err = read_file(err_f) or ""
+    check("indented-warn", "sweep exits 0", code == 0)
+    check("indented-warn", "sweep warns on stderr naming file, line, and tm validate",
+        err:find("active.tm.md:3", 1, true) ~= nil and err:find("tm validate", 1, true) ~= nil, err)
+    check("indented-warn", "sweep keeps stdout free of warnings",
+        out:find("warning:", 1, true) == nil, out)
+    os.execute("rm -rf " .. dir)
+end
+
 -- ── Summary ──────────────────────────────────────────────────────────────
 
 print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))

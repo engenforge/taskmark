@@ -1,6 +1,7 @@
 #!/usr/bin/env lua
 -- tmio.lua — tiny shared filesystem helpers (existence checks, mkdir -p,
 -- and collision-safe atomic writes) used by tminit and tmsweep. No parsing, no state.
+local tmscan = require("tmscan")
 local M = {}
 
 local _counter = 0
@@ -232,6 +233,22 @@ function M.write_file_atomic(path, content)
         return nil, "cannot replace " .. path .. ": " .. tostring(err)
     end
     return true
+end
+
+-- Warn on stderr for any line that looks like a task line indented 1 to 3
+-- spaces. When `warned` is given, each `key` (default `path`) is warned at
+-- most once.
+function M.warn_indented_tasks(path, lines, warned, key)
+    local k = key or path
+    if warned then
+        if warned[k] then return end
+        warned[k] = true
+    end
+    for _, line_no in ipairs(tmscan.indented_task_lines(lines)) do
+        io.stderr:write(string.format(
+            "tm: warning: %s:%d: checkbox line is indented 1-3 spaces (run `tm validate`)\n",
+            path, line_no))
+    end
 end
 
 return M
