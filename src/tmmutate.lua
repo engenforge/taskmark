@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
 -- tmmutate.lua — task mutations and compact listings addressed by handle
--- (SPEC-TASKMARK-05 tooling).
+-- (SPEC-TASKMARK-06 tooling).
 --
 -- Subcommands:
 --   tm list [--pending|--all] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]

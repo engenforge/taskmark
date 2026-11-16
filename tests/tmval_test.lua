@@ -176,7 +176,7 @@ do
 
     local out, code = validate("clean.tm.md")
     check("cli", "no escape sequences when stdout is a pipe",
-        code == 0 and out == "[PASS] clean.tm.md conforms to SPEC-TASKMARK-05.\n", out)
+        code == 0 and out == "[PASS] clean.tm.md conforms to SPEC-TASKMARK-06.\n", out)
     out, code = validate("bad.tm.md")
     check("cli", "failures are plain text too", code == 1 and not out:find("\27", 1, true) and out:find("[FAIL] Line 4: V7:", 1, true) ~= nil, out)
 

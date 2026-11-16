@@ -1,15 +1,17 @@
 ---
 project: Taskmark
-spec: SPEC-TASKMARK-05
+spec: SPEC-TASKMARK-06
 author: Jason Lenz, Engenforge LLC
-date: 2026-11-12
+date: 2026-11-16
 ---
 
-# Taskmark Specification (SPEC-TASKMARK-05)
+# Taskmark Specification (SPEC-TASKMARK-06)
 
 Taskmark is a deterministic, multi-line, plain-text task format designed to work with any text editor and with automated stream-parsing tools. It takes the single-line simplicity of `todo.txt` and adds an attached block of arbitrary context beneath each task. It relies on strict structural anchors — a fixed task token, a fixed payload indent, and pure CommonMark block separation — so that conforming tools never need to build an abstract syntax tree.
 
-SPEC-TASKMARK-05 extends SPEC-TASKMARK-04 without changing its grammar or its validator rules: every SPEC-TASKMARK-04 document conforms unchanged. It adds the optional task identifier (§4.3.3), the `Depends` and `Claimed` fields (§4.4.2), and states the order of work, how a session selects a task (§5.1), and how a session claims one (§5.1.1).
+SPEC-TASKMARK-06 extends SPEC-TASKMARK-05 without changing its grammar or its validator rules: every SPEC-TASKMARK-05 document conforms unchanged. It registers the `Claimed` labeled field (§4.4.2) and defines task claiming and selection over claimed tasks (§5.1, §5.1.1).
+
+SPEC-TASKMARK-05 extended SPEC-TASKMARK-04 without changing its grammar or its validator rules: it added the optional task identifier (§4.3.3) and the `Depends` field (§4.4.2), and stated the order of work and how a session selects a task (§5.1).
 
 ## 1. Conformance and Notation
 

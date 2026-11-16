@@ -42,7 +42,7 @@ Guidance for any AI agent working on Taskmark. Read this before changing the spe
 
 ## Sources of truth
 
-1. **`doc/taskmark_spec.md`** is the normative authority for the SPEC-TASKMARK-05 specification.
+1. **`doc/taskmark_spec.md`** is the normative authority for the SPEC-TASKMARK-06 specification.
 2. The validator (`src/tmval.lua`) and line scanner (`src/tmscan.lua`) must enforce what the specification defines.
 3. Informative documents (`README.md`, `doc/tm.1.scd`, etc.) follow the specification.
 

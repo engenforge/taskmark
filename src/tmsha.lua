@@ -1,7 +1,7 @@
 #!/usr/bin/env lua
 -- tmsha.lua — `tm check-shas` and `tm remap`: keep git:<sha> citations in
 -- the task files pointing at real commits after history is rewritten
--- (SPEC-TASKMARK-05 §5.2, §10.3).
+-- (SPEC-TASKMARK-06 §5.2, §10.3).
 --
 --   tm check-shas [--branch REF] [--tasks-dir DIR]
 --   tm remap OLD NEW [OLD NEW...] [--tasks-dir DIR]

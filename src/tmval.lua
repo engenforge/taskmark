@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- tm validate — SPEC-TASKMARK-05 §1.5 validator. Checks a document against
+-- tm validate — SPEC-TASKMARK-06 §1.5 validator. Checks a document against
 -- rules V3 through V14 and nothing else. Beyond those it prints non-fatal
 -- warnings (a malformed date, two fields on one line, an identifier carried
 -- by two tasks); tag shape or placement is never checked. One subcommand of the `tm` universal
@@ -16,7 +16,7 @@ local tmid     = require("tmid")
 
 local function show_help()
     print([[
-tm validate — SPEC-TASKMARK-05 taskmark validator
+tm validate — SPEC-TASKMARK-06 taskmark validator
 
 Usage:
   tm validate [options] [file...]
@@ -187,14 +187,14 @@ local function validate_body(lines, errors)
 
             if not exempt then
                 -- V8: leading whitespace in payload content.
-                -- SPEC-TASKMARK-05 allows up to 4 spaces of content indent (columns 5-8 total)
+                -- SPEC-TASKMARK-06 allows up to 4 spaces of content indent (columns 5-8 total)
                 -- if and only if continuing an active list item without an intervening blank line.
                 local content_spaces = fields.content:match("^( *)")
                 local num_spaces = content_spaces and #content_spaces or 0
 
                 if num_spaces > 0 then
                     if in_list_item and num_spaces <= 4 and prev_kind ~= "blank" then
-                        -- Allowed list continuation or sub-list under SPEC-TASKMARK-05.
+                        -- Allowed list continuation or sub-list under SPEC-TASKMARK-06.
                     else
                         add(i, "V8", "payload content has further leading whitespace outside a fenced code block")
                         in_list_item = false
@@ -225,7 +225,7 @@ local function validate_body(lines, errors)
                         prev_was_label = true
                         in_list_item = false
                     elseif prev_was_label and fields.content:match("^> (.*)$") and not fields.content:match("^> %s*>") then
-                        -- SPEC-TASKMARK-05 V10: multi-line labeled field continuation
+                        -- SPEC-TASKMARK-06 V10: multi-line labeled field continuation
                         prev_was_label = true
                         in_list_item = false
                     else
@@ -300,7 +300,7 @@ local function validate_body(lines, errors)
     end
 end
 
--- Validate an array of line strings against SPEC-TASKMARK-05. Returns sorted errors table.
+-- Validate an array of line strings against SPEC-TASKMARK-06. Returns sorted errors table.
 local function validate_lines(lines)
     local errors = {}
     validate_body(lines, errors)
@@ -481,7 +481,7 @@ local function fix_document(lines)
                             in_list_item = false
                             new_lines[#new_lines + 1] = "    " .. content
                         elseif prev_was_label and content:match("^> (.*)$") and not content:match("^> %s*>") then
-                            -- SPEC-TASKMARK-05: Multi-line labeled field continuation
+                            -- SPEC-TASKMARK-06: Multi-line labeled field continuation
                             prev_was_label = true
                             in_list_item = false
                             new_lines[#new_lines + 1] = "    " .. content
@@ -506,7 +506,7 @@ local function fix_document(lines)
 
                         if num_spaces > 0 then
                             if in_list_item and num_spaces <= 4 and prev_kind ~= "blank" then
-                                -- SPEC-TASKMARK-05: Valid sub-list or continuation indent! Keep content.
+                                -- SPEC-TASKMARK-06: Valid sub-list or continuation indent! Keep content.
                             else
                                 content = content:gsub("^[ \t]+", "")
                                 if content:match("^[%-%*%+] ") or content:match("^%d+[.)] ") then
@@ -633,7 +633,7 @@ local function run(args)
             for _, w in ipairs(validate_warnings(lines)) do warn(file, w.line, w.msg) end
 
             if #errors == 0 then
-                print(string.format("%s[PASS]%s %s conforms to SPEC-TASKMARK-05.", TERM_GREEN, TERM_RESET, file))
+                print(string.format("%s[PASS]%s %s conforms to SPEC-TASKMARK-06.", TERM_GREEN, TERM_RESET, file))
             elseif fix_mode then
                 local fixed_lines, ok = fix_document(lines)
                 local remaining_errors = validate_lines(fixed_lines)
@@ -643,7 +643,7 @@ local function run(args)
                     local nl = tmscan.detect_newline(raw_content)
                     local ok_w, werr = tmio.write_file_atomic(file, table.concat(fixed_lines, nl) .. nl)
                     if not ok_w then tmio.die(werr) end
-                    print(string.format("%s[FIXED]%s %s (repaired %d error(s); now conforms to SPEC-TASKMARK-05).", TERM_YELLOW, TERM_RESET, file, #errors))
+                    print(string.format("%s[FIXED]%s %s (repaired %d error(s); now conforms to SPEC-TASKMARK-06).", TERM_YELLOW, TERM_RESET, file, #errors))
                 else
                     for _, e in ipairs(errors) do
                         if #files > 1 then

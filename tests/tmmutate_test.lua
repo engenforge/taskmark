@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
 -- tests/tmmutate_test.lua — unit and CLI tests for tmmutate.lua
--- (SPEC-TASKMARK-05 AI & CLI ergonomics: atomic task mutations, compact
+-- (SPEC-TASKMARK-06 AI & CLI ergonomics: atomic task mutations, compact
 -- listings, and ephemeral hashes).
 
 -- Run hermetically (see tests/tmsync_test.lua): the --git cases make

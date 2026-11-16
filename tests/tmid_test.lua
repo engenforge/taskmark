@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- tests/tmid_test.lua — unit tests for tmid.lua (SPEC-TASKMARK-05 §4.3.3
+-- tests/tmid_test.lua — unit tests for tmid.lua (SPEC-TASKMARK-06 §4.3.3
 -- task identifiers and the Depends field).
 
 local script_dir = (arg[0] or "./tests/tmid_test.lua"):match("^(.*)/[^/]+$") or "."

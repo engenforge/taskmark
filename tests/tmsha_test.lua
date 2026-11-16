@@ -1,6 +1,6 @@
 #!/usr/bin/env lua
 -- tests/tmsha_test.lua — tests for tmsha.lua: `tm check-shas` and
--- `tm remap` over git:<sha> citations (SPEC-TASKMARK-05 §10.3).
+-- `tm remap` over git:<sha> citations (SPEC-TASKMARK-06 §10.3).
 
 -- Run hermetically, as tests/tmsync_test.lua does: scratch repositories
 -- must not pick up the user's git configuration (signing, hooks, identity).

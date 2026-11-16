@@ -1,6 +1,6 @@
 # Taskmark (`tm`)
 
-**Taskmark** is a deterministic, multi-line, plain-text task specification (**SPEC-TASKMARK-05**) and CLI utility (`tm`) designed to work with any text editor and automated parsing tools.
+**Taskmark** is a deterministic, multi-line, plain-text task specification (**SPEC-TASKMARK-06**) and CLI utility (`tm`) designed to work with any text editor and automated parsing tools.
 
 It replaces the single-line constraints of formats like `todo.txt` while maintaining strict **CommonMark** compatibility, pure Markdown documents without YAML frontmatter friction, and predictable 4-space payload indentation rules.
 
@@ -9,7 +9,7 @@ It replaces the single-line constraints of formats like `todo.txt` while maintai
 ## Table of Contents
 
 - [Features](#features)
-- [Specification Summary (SPEC-TASKMARK-05)](#specification-summary-spec-taskmark-05)
+- [Specification Summary (SPEC-TASKMARK-06)](#specification-summary-spec-taskmark-06)
   - [Directory Architecture](#directory-architecture)
   - [Pure CommonMark Structure](#pure-commonmark-structure)
   - [Task & Context Indentation](#task--context-indentation)
@@ -41,7 +41,7 @@ It replaces the single-line constraints of formats like `todo.txt` while maintai
 
 ---
 
-## Specification Summary (SPEC-TASKMARK-05)
+## Specification Summary (SPEC-TASKMARK-06)
 
 Read the full specification at [`doc/taskmark_spec.md`](doc/taskmark_spec.md).
 
@@ -170,7 +170,7 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 | `tm remap OLD NEW [OLD NEW...]` | After a squash or rebase, replace citations of each old commit with its new one in every task file, the archive included. |
 | `tm sweep [--sprint <id>]` | Move every completed task (with its payload) from `active.tm.md` to `completed.tm.md`, newest first, under `## YYYY-MM` (or `## Sprint <id>`). |
 | `tm archive` | Move sections aged out of `completed.tm.md` into `archive/<YYYY>/<YYYY-MM>.tm.md`. |
-| `tm validate [file...]` | Validate task file(s) against SPEC-TASKMARK-05 (defaults to the configured active file). Also prints non-fatal `[WARN]` lines: a malformed date, two fields on one line (not checked in completed tasks), an identifier carried by two tasks among the files given. Output is coloured only on a terminal, and never when `NO_COLOR` is set. |
+| `tm validate [file...]` | Validate task file(s) against SPEC-TASKMARK-06 (defaults to the configured active file). Also prints non-fatal `[WARN]` lines: a malformed date, two fields on one line (not checked in completed tasks), an identifier carried by two tasks among the files given. Output is coloured only on a terminal, and never when `NO_COLOR` is set. |
 | `tm indent [info]` | Prefix stdin with the four-space payload indent, optionally wrapped in a fenced code block. |
 | `tm dedent [--fence]` | Remove the four-space payload indent from stdin. |
 | `tm version` | Print current version string. |
@@ -377,7 +377,7 @@ lua tests/commonmark_test.lua
 ├── Makefile              # Build, test, install, and packaging targets
 ├── VERSION               # Semantic version string (the only copy; see Cutting a Release)
 ├── doc/
-│   ├── taskmark_spec.md  # SPEC-TASKMARK-05 Specification document
+│   ├── taskmark_spec.md  # SPEC-TASKMARK-06 Specification document
 │   ├── tm.1.scd          # scdoc source for tm(1) man page
 │   └── tm.1              # Formatted roff man page
 ├── scripts/
@@ -390,7 +390,7 @@ lua tests/commonmark_test.lua
 │   ├── tmsweep.lua       # CLI runner for the sweep and archive subcommands
 │   ├── tmsweep_core.lua  # Sweep, blank-line normalization, and archive-aging logic
 │   ├── tmfilter.lua      # indent/dedent payload filters
-│   ├── tmval.lua         # SPEC-TASKMARK-05 validation engine (rules V3-V13)
+│   ├── tmval.lua         # SPEC-TASKMARK-06 validation engine (rules V3-V13)
 │   └── tmconfig.lua      # .taskmarkrc / global-config / --tasks-dir path resolution (§9)
 ├── tests/
 │   ├── fixtures/         # Pass/fail Markdown test fixtures for the validator

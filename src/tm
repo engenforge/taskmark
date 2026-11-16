@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- tm — universal taskmark utility (SPEC-TASKMARK-05)
+-- tm — universal taskmark utility (SPEC-TASKMARK-06)
 --
 -- Dispatches subcommands to the taskmark modules in this repository:
 --   tm init       Bootstrap a project's .tasks/ directory with starter files
@@ -56,7 +56,7 @@ end
 local VERSION = read_version()
 
 local USAGE = [[
-tm — universal taskmark utility (SPEC-TASKMARK-05)
+tm — universal taskmark utility (SPEC-TASKMARK-06)
 
 Usage:
   tm <command> [options]
@@ -85,7 +85,7 @@ Commands:
   check-shas Report git:<sha> citations that no longer name a commit
              (--branch REF: or are not reachable from REF)
   remap      Replace git:OLD with git:NEW in every task file, after a squash
-  validate   Validate taskmark file(s) for SPEC-TASKMARK-05 compliance
+  validate   Validate taskmark file(s) for SPEC-TASKMARK-06 compliance
   indent     Prefix stdin with the four-space payload indent
   dedent     Remove the four-space payload indent from stdin
   help       Show this help

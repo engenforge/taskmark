@@ -7,7 +7,7 @@ tm - universal taskmark utility
 *tm* <command> [options]
 
 # DESCRIPTION
-*tm* is the command-line interface for SPEC-TASKMARK-05 taskmark files. It
+*tm* is the command-line interface for SPEC-TASKMARK-06 taskmark files. It
 provides subcommands for atomic task mutations, compact task listings
 addressed by task identifier, sweeping completed tasks between task documents in
 strict reverse chronological order, archiving aged-out sections, validating
@@ -159,7 +159,7 @@ the current working directory (the layout described by the spec).
 	remapping.
 
 *validate* [--fix] [file...]
-	Validate taskmark file(s) for SPEC-TASKMARK-05 compliance. If no _file_
+	Validate taskmark file(s) for SPEC-TASKMARK-06 compliance. If no _file_
 	is given, defaults to the configured active file. If *--fix* is given,
 	automatically repairs common formatting errors (over-indented bullet
 	continuations and sub-lists, wrapped labeled fields, missing blank lines
@@ -403,4 +403,4 @@ resolution order.
 
 # SEE ALSO
 _doc/taskmark_spec.md_
-	The SPEC-TASKMARK-05 specification implemented by this tool.
+	The SPEC-TASKMARK-06 specification implemented by this tool.

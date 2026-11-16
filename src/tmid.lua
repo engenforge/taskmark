@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- tmid.lua — SPEC-TASKMARK-05 §4.3.3 task identifiers (`id:k7q2x` on the
+-- tmid.lua — SPEC-TASKMARK-06 §4.3.3 task identifiers (`id:k7q2x` on the
 -- task line) and the `Depends` field that cites them (§4.4.2).
 --
 -- An identifier is drawn at random and checked against every task file, so
