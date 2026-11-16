@@ -36,7 +36,7 @@ It replaces the single-line constraints of formats like `todo.txt` while maintai
 - **Reverse-Chronological Archive:** Newly completed work is prepended to the top of `completed.tm.md` and grouped chronologically (`## YYYY-MM`), allowing developers and AI agents to inspect the latest accomplishments without scrolling.
 - **Automated Task Lifecycle:** `tm sweep` moves individual completed tasks from the active sheet into `completed.tm.md`; `tm archive` ages out older sections into monthly archives.
 - **Built-in Validator:** `tm validate` verifies strict spec compliance for task files and provides `--fix` auto-repair (including stripping the frontmatter block from pre-0.4 files).
-- **Safe Concurrent Writes:** Every rewrite goes through a uniquely named temp file and an atomic rename, and mutating commands hold a short-lived `.tm.lock` on the task directory so concurrent runs (a human and an AI agent, say) wait for each other instead of losing updates.
+- **Safe Concurrent Writes:** Every rewrite goes through a uniquely named temp file and an atomic rename, and mutating commands hold a short-lived `.tm.lock` on the task directory so concurrent runs (a human and an AI agent, or parallel sessions in linked worktrees) wait for each other instead of losing updates; `tm next --claim` selects and claims a task under the same lock so two sessions never pick the same work.
 - **Dependency-Free Runtime:** The tool that reads and writes your tasks is pure, portable Lua with no runtime dependency of any kind — no C compiler, no vendored library, nothing to build to install it.
 
 ---
@@ -100,7 +100,7 @@ Optional conventions adapted from `todo.txt`, layered onto the existing task/pay
 
 ### Task Lifecycle
 
-1. **Session Start:** Run `tm next` for the task to start — the first pending one with no unmet dependency, a priority flag taking precedence over position — or inspect all tasks compactly with `tm list`.
+1. **Session Start:** Run `tm next --claim` to select and claim the task to start in one locked step — the first unclaimed pending one with no unmet dependency, a priority flag taking precedence over position — or inspect all tasks compactly with `tm list` (`tm list --claimed` finds stale claims, and `tm release <handle>` abandons a claim without finishing).
 2. **Task Creation:** Add new work with `tm add "Task description" -p A` (directly under the first heading, or `--section <name>`). The task is stamped with an identifier; `tm id` stamps tasks written by hand.
 3. **Task Promotion:** Promote planned items from backlog to active with `tm move <handle>` (defaults from `future.tm.md` to `active.tm.md`).
 4. **Task Completion:**
@@ -157,11 +157,13 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 |---|---|
 | `tm init [--orphan [BRANCH]]` | Bootstrap taskmark folder and starter files (with `--orphan`, initializes an isolated orphan Git branch mounted as a worktree). |
 | `tm sync [-m MSG] [-p]` | Commit modified taskmark files in the tasks directory to the orphan branch (`-p` pushes to remote). |
-| `tm list [--pending\|--all] [--not TAG] [TAG...]` | One line per task — its handle and summary (`[k7q2x] (A) Task text id:k7q2x`), no payloads. The handle is the task's identifier, or without one the shortest unique hash prefix of at least 4 hex digits. `+project` / `@context` arguments keep only tasks carrying every tag; `--not TAG` drops those carrying it. |
-| `tm next [--not TAG] [TAG...]` | The task to start: the first pending task in the active file with no unmet `Depends`, flagged priorities first; filtered like `tm list`. |
+| `tm list [--pending\|--all] [--claimed\|--unclaimed] [--not TAG] [TAG...]` | One line per task — its handle and summary (`[k7q2x] (A) Task text id:k7q2x`), plus `(claimed: VALUE)` for claimed pending tasks, no payloads. The handle is the task's identifier, or without one the shortest unique hash prefix of at least 4 hex digits. `--claimed` / `--unclaimed` filter pending tasks by claim; `+project` / `@context` arguments keep only tasks carrying every tag; `--not TAG` drops those carrying it. |
+| `tm next [--claim [--as NAME]] [--not TAG] [TAG...]` | The task to start: the first unclaimed pending task in the active file with no unmet `Depends`, flagged priorities first; filtered like `tm list`. `--claim` selects and claims it in one locked step. |
 | `tm add <text> [-p PRI] [--section S \| --before T \| --after T]` | Add a task to an existing file, under the first heading or the named section, or directly before or after task `T`, stamped with a new identifier unless the text already carries an unused one (`id:z0114`). |
 | `tm id [file...]` | Stamp an identifier on every pending task that lacks one (default: the active and future files) and report any identifier carried by two tasks. |
-| `tm done <handle\|pattern> [--git [REV]]` | Mark a pending task completed, stamping the local date and optionally `git:<sha>` of REV (default `HEAD`). |
+| `tm claim <handle\|pattern> [--as NAME] [--force]` | Claim a pending task under `.tm.lock`, stamping `> **Claimed:** YYYY-MM-DD [NAME]` (claimant from `--as`, `$TM_CLAIMANT`, or the current Git branch). `--force` replaces an existing claim. |
+| `tm release <handle\|pattern>` | Remove the `Claimed` field from a pending task under `.tm.lock`. |
+| `tm done <handle\|pattern> [--git [REV]]` | Mark a pending task completed, remove any `Claimed` field, and stamp the local date and optionally `git:<sha>` of REV (default `HEAD`). |
 | `tm move <handle\|pattern> [--from F] [--to T] [--section S \| --before T \| --after T]` | Move a task between files or sections, or next to another task (default: `future.tm.md` to `active.tm.md`, inferred from the task or anchor when it is not there); destination written first. |
 | `tm payload <handle\|pattern> [--append \| --replace]` | Print a task's payload without its indent; `--append` adds standard input beneath it and `--replace` puts standard input in its place, under the lock and only if the task still validates. |
 | `tm check-shas [--branch REF]` | Report `git:<sha>` citations in any task file that no longer name a commit (or, with `--branch`, are not reachable from `REF`); exits 1 if any. |

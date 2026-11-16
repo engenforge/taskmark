@@ -271,8 +271,9 @@ local function has_tags(summary, tags, not_tags)
 end
 
 -- Compact one-line-per-task listing of a file. opts.filter: "pending"
--- (default) or "all", which also shows each task's checkbox; opts.tags / opts.not_tags: tags a task must / must
--- not carry. Returns the lines, or nil, reason.
+-- (default) or "all", which also shows each task's checkbox; opts.tags /
+-- opts.not_tags: tags a task must / must not carry; opts.claim_filter:
+-- "claimed" or "unclaimed". Returns the lines, or nil, reason.
 function M.format_list(file_or_lines, opts)
     opts = opts or {}
     local lines = file_or_lines
@@ -284,12 +285,25 @@ function M.format_list(file_or_lines, opts)
     local handles = M.handles(tasks)
     local out = {}
     for _, t in ipairs(tasks) do
-        if not has_tags(t.summary, opts.tags, opts.not_tags) then
+        local claimed
+        if not t.done then
+            local _, _, val = tmid.field(lines, t, "Claimed")
+            claimed = val
+        end
+        local claim_ok = true
+        if opts.claim_filter == "claimed" then
+            claim_ok = not t.done and claimed ~= nil
+        elseif opts.claim_filter == "unclaimed" then
+            claim_ok = not t.done and claimed == nil
+        end
+        if not claim_ok or not has_tags(t.summary, opts.tags, opts.not_tags) then
             -- filtered out
         elseif opts.filter == "all" then
-            out[#out + 1] = string.format("[%s] [%s] %s", handles[t], t.done and "x" or " ", t.summary)
+            local suffix = (not t.done and claimed) and (" (claimed: " .. claimed .. ")") or ""
+            out[#out + 1] = string.format("[%s] [%s] %s%s", handles[t], t.done and "x" or " ", t.summary, suffix)
         elseif not t.done then
-            out[#out + 1] = string.format("[%s] %s", handles[t], t.summary)
+            local suffix = claimed and (" (claimed: " .. claimed .. ")") or ""
+            out[#out + 1] = string.format("[%s] %s%s", handles[t], t.summary, suffix)
         end
     end
     return out
@@ -298,6 +312,62 @@ end
 -- ── tm done ───────────────────────────────────────────────────────────────
 
 local FIELD = "^    > %*%*[A-Za-z][A-Za-z0-9_%-]*:%*%*"
+
+-- Stamp or replace a labeled field in a task's payload (§4.4.2).
+-- An existing field is replaced in place; a new one joins the leading
+-- run of labeled fields, inserting a blank line before freeform content
+-- directly beneath the task line (V11).
+local function stamp_field(lines, task, key, value)
+    local stamp = "    > **" .. key .. ":** " .. value
+    local existing_start, existing_end = tmid.field(lines, task, key)
+    if existing_start then
+        for k = existing_end, existing_start + 1, -1 do table.remove(lines, k) end
+        lines[existing_start] = stamp
+        return
+    end
+    local last = block_end(lines, task)
+    local at = task.line + 1
+    while at <= last and (lines[at]:match(FIELD) or
+            (at > task.line + 1 and lines[at]:match("^    > ") and lines[at - 1]:match("^    > "))) do
+        at = at + 1
+    end
+    table.insert(lines, at, stamp)
+    local after = lines[at + 1]
+    if at == task.line + 1 and after and at + 1 <= last + 1 and after:match("^    ")
+        and not after:match("^    > ") then
+        table.insert(lines, at + 1, "")
+    end
+end
+
+-- Remove a named labeled field and its continuation lines from a task's
+-- payload. Also removes a blank line left directly beneath the task line
+-- before remaining payload content. Returns true if removed, false if absent.
+-- Remove every labeled field named `key` and its continuation lines from a
+-- task's payload. Also removes a blank line left directly beneath the task
+-- line before remaining payload content. Returns true if any were removed.
+local function remove_field(lines, task, key)
+    local matches = tmid.fields(lines, task, key)
+    if #matches == 0 then return false end
+    local total_removed = 0
+    for idx = #matches, 1, -1 do
+        local start_line, end_line = matches[idx].start_line, matches[idx].end_line
+        local removed = end_line - start_line + 1
+        for k = end_line, start_line, -1 do table.remove(lines, k) end
+        if start_line == task.line + 1 and lines[start_line] == ""
+            and lines[start_line + 1] and lines[start_line + 1]:match("^    ") then
+            table.remove(lines, start_line)
+            removed = removed + 1
+        end
+        total_removed = total_removed + removed
+    end
+    if task.payload_end then
+        task.payload_end = task.payload_end - total_removed
+        if task.payload_end < task.payload_start then
+            task.payload_start, task.payload_end = nil, nil
+        end
+    end
+    return true
+end
 
 -- Mark a pending task done and stamp its Completed field. opts: file |
 -- tasks_dir, query, git_sha, date (default: today, local time).
@@ -328,39 +398,109 @@ function M.done(opts)
 
         lines[task.line] = lines[task.line]:gsub("^%- %[ %]", "- [x]", 1)
 
-        local stamp = "    > **Completed:** " .. (opts.date or os.date("%Y-%m-%d"))
-        if opts.git_sha then stamp = stamp .. " git:" .. opts.git_sha end
+        remove_field(lines, task, "Claimed")
+        local value = opts.date or os.date("%Y-%m-%d")
+        if opts.git_sha then value = value .. " git:" .. opts.git_sha end
+        stamp_field(lines, task, "Completed", value)
 
-        local last = block_end(lines, task)
-        -- An existing Completed field, ignoring fenced code: a fenced
-        -- example of a Completed line is content, not the task's field.
-        local existing
-        for i, _, _, _, _, fence_open in tmscan.iter(lines) do
-            if i > last then break end
-            if i > task.line and not fence_open and lines[i]:match("^    > %*%*Completed:%*%*") then
-                existing = i
-                break
-            end
+        local ok, werr = write_lines(file, lines, nl)
+        if not ok then return false, werr end
+        return true, task, handles
+    end)
+end
+
+-- ── tm claim and tm release ──────────────────────────────────────────────
+
+-- Resolve and validate the claimant: --as NAME, else $TM_CLAIMANT, else
+-- the current branch of the working directory, else nil (date alone).
+local function resolve_claimant(as_opt)
+    local name = as_opt
+    if name == nil then
+        local env = os.getenv("TM_CLAIMANT")
+        if env and env ~= "" then name = env end
+    end
+    if name == nil then
+        name = tmgit.branch(".")
+    end
+    if not name or name == "" then return "" end
+    if name:match("[\r\n]") then return nil, "claimant cannot contain a newline" end
+    if name:match("%*%*[A-Za-z][A-Za-z0-9_%-]*:%*%*") then
+        return nil, "claimant cannot contain a labeled-field marker (**Key:**)"
+    end
+    return name
+end
+
+-- Stamp a Claimed field on a pending task under the lock. opts: file |
+-- tasks_dir, query, as, force, date (default: today, local time).
+function M.claim(opts)
+    local claimant, cerr = resolve_claimant(opts.as)
+    if not claimant then return false, cerr end
+
+    local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
+    local file = opts.file or cfg.active_path
+
+    return tmio.with_lock(dir_of(file), function()
+        local lines, nl = read_file(file)
+        if not lines then return false, "no such file: " .. file end
+
+        local tasks = tmscan.tasks(lines)
+        local handles = M.handles(tasks)
+        local pending = {}
+        for _, t in ipairs(tasks) do
+            if not t.done then pending[#pending + 1] = t end
         end
 
-        if existing then
-            lines[existing] = stamp
-        else
-            -- Join the leading run of labeled fields (§4.4.2): directly
-            -- beneath the task line, past any fields and their `    > `
-            -- continuation lines.
-            local at = task.line + 1
-            while at <= last and (lines[at]:match(FIELD) or
-                    (at > task.line + 1 and lines[at]:match("^    > ") and lines[at - 1]:match("^    > "))) do
-                at = at + 1
+        local task, err, candidates = M.find_task(pending, opts.query)
+        if not task then
+            if err == "not_found" then
+                local done_match = M.find_task(tasks, opts.query)
+                if done_match then return false, "already_completed", { task = done_match, handles = handles } end
             end
-            table.insert(lines, at, stamp)
-            -- Freeform content directly beneath a field needs a blank line (V11).
-            local after = lines[at + 1]
-            if at == task.line + 1 and after and at + 1 <= last + 1 and after:match("^    ")
-                and not after:match("^    > ") then
-                table.insert(lines, at + 1, "")
+            return false, err, { candidates = candidates, handles = handles }
+        end
+
+        local existing_start, _, existing_val = tmid.field(lines, task, "Claimed")
+        if existing_start and not opts.force then
+            return false, "already_claimed", { task = task, handles = handles, value = existing_val }
+        end
+
+        local value = (opts.date or os.date("%Y-%m-%d")) .. (claimant ~= "" and (" " .. claimant) or "")
+        stamp_field(lines, task, "Claimed", value)
+
+        local ok, werr = write_lines(file, lines, nl)
+        if not ok then return false, werr end
+        return true, task, handles
+    end)
+end
+
+-- Remove a Claimed field from a pending task under the lock. opts: file |
+-- tasks_dir, query.
+function M.release(opts)
+    local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
+    local file = opts.file or cfg.active_path
+
+    return tmio.with_lock(dir_of(file), function()
+        local lines, nl = read_file(file)
+        if not lines then return false, "no such file: " .. file end
+
+        local tasks = tmscan.tasks(lines)
+        local handles = M.handles(tasks)
+        local pending = {}
+        for _, t in ipairs(tasks) do
+            if not t.done then pending[#pending + 1] = t end
+        end
+
+        local task, err, candidates = M.find_task(pending, opts.query)
+        if not task then
+            if err == "not_found" then
+                local done_match = M.find_task(tasks, opts.query)
+                if done_match then return false, "already_completed", { task = done_match, handles = handles } end
             end
+            return false, err, { candidates = candidates, handles = handles }
+        end
+
+        if not remove_field(lines, task, "Claimed") then
+            return false, "not_claimed", { task = task, handles = handles }
         end
 
         local ok, werr = write_lines(file, lines, nl)
@@ -675,50 +815,83 @@ end
 
 -- ── tm next ───────────────────────────────────────────────────────────────
 
--- The task to start (§5.1): among the pending tasks of the active file
--- that match the tag filters and have no unmet dependency, the one with
--- the highest priority flag, or the first in file order when none is
--- flagged. A dependency is met only when the task it names is completed,
--- in any task file. opts: file | tasks_dir, tags, not_tags.
--- Returns task (nil when none is ready), handles, warnings; or nil, nil,
--- nil, reason.
-function M.next(opts)
-    opts = opts or {}
-    local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
-    local file = opts.file or cfg.active_path
-    local lines = read_file(file)
-    if not lines then return nil, nil, nil, "no such file: " .. file end
-
+local function select_next(lines, file, cfg, opts)
     local tasks = tmscan.tasks(lines)
     local handles = M.handles(tasks)
     local all = with_file(tmid.task_files(cfg), file)
     local status, warnings = {}, {}
     local best
+    local claimed_skipped = 0
     for _, t in ipairs(tasks) do
         if not t.done and has_tags(t.summary, opts.tags, opts.not_tags) then
-            local ready = true
-            for _, dep in ipairs(tmid.depends(lines, t)) do
-                if status[dep] == nil then status[dep] = tmid.status(dep, all) or "unknown" end
-                if status[dep] == "unknown" then
-                    warnings[#warnings + 1] = string.format("[%s] depends on %s%s, which names no task",
-                        handles[t], tmid.PREFIX, dep)
+            if tmid.field(lines, t, "Claimed") then
+                claimed_skipped = claimed_skipped + 1
+            else
+                local ready = true
+                for _, dep in ipairs(tmid.depends(lines, t)) do
+                    if status[dep] == nil then status[dep] = tmid.status(dep, all) or "unknown" end
+                    if status[dep] == "unknown" then
+                        warnings[#warnings + 1] = string.format("[%s] depends on %s%s, which names no task",
+                            handles[t], tmid.PREFIX, dep)
+                    end
+                    if status[dep] ~= "done" then ready = false end
                 end
-                if status[dep] ~= "done" then ready = false end
+                -- "~" sorts after every priority letter; strict < keeps file order.
+                if ready and (not best or (t.priority or "~") < (best.priority or "~")) then best = t end
             end
-            -- "~" sorts after every priority letter; strict < keeps file order.
-            if ready and (not best or (t.priority or "~") < (best.priority or "~")) then best = t end
         end
     end
-    return best, handles, warnings
+    return best, handles, warnings, claimed_skipped
+end
+
+-- The task to start (§5.1): among the unclaimed pending tasks of the active
+-- file that match the tag filters and have no unmet dependency, the one with
+-- the highest priority flag, or the first in file order when none is
+-- flagged. A dependency is met only when the task it names is completed,
+-- in any task file. opts: file | tasks_dir, tags, not_tags, claim, as, date.
+-- Returns task (nil when none is ready), handles, warnings, err, claimed_skipped.
+function M.next(opts)
+    opts = opts or {}
+    local claimant
+    if opts.claim then
+        local cerr
+        claimant, cerr = resolve_claimant(opts.as)
+        if not claimant then return nil, nil, nil, cerr end
+    end
+
+    local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
+    local file = opts.file or cfg.active_path
+
+    if not opts.claim then
+        local lines = read_file(file)
+        if not lines then return nil, nil, nil, "no such file: " .. file end
+        local best, handles, warnings, claimed_skipped = select_next(lines, file, cfg, opts)
+        return best, handles, warnings, nil, claimed_skipped
+    end
+
+    return tmio.with_lock(dir_of(file), function()
+        local lines, nl = read_file(file)
+        if not lines then return nil, nil, nil, "no such file: " .. file end
+        local best, handles, warnings, claimed_skipped = select_next(lines, file, cfg, opts)
+        if best then
+            local value = (opts.date or os.date("%Y-%m-%d")) .. (claimant ~= "" and (" " .. claimant) or "")
+            stamp_field(lines, best, "Claimed", value)
+            local ok, werr = write_lines(file, lines, nl)
+            if not ok then return nil, nil, nil, werr end
+        end
+        return best, handles, warnings, nil, claimed_skipped
+    end)
 end
 
 -- ── CLI ───────────────────────────────────────────────────────────────────
 
 local USAGE = {
-    list = "Usage: tm list [--pending|--all] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]   (TAG: +project or @context)",
-    next = "Usage: tm next [--not TAG]... [TAG...] [--file FILE] [--tasks-dir DIR]   (TAG: +project or @context)",
+    list = "Usage: tm list [--pending|--all] [--claimed|--unclaimed] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]   (TAG: +project or @context)",
+    next = "Usage: tm next [--claim [--as NAME]] [--not TAG]... [TAG...] [--file FILE] [--tasks-dir DIR]   (TAG: +project or @context)",
     id   = "Usage: tm id [--tasks-dir DIR] [file...]",
     done = "Usage: tm done [options] [--] <handle-or-pattern>   (options: --git [REV], --file FILE, --tasks-dir DIR)",
+    claim = "Usage: tm claim [options] [--] <handle-or-pattern>   (options: --as NAME, --force, --file FILE, --tasks-dir DIR)",
+    release = "Usage: tm release [options] [--] <handle-or-pattern>   (options: --file FILE, --tasks-dir DIR)",
     move = "Usage: tm move [options] [--] <handle-or-pattern>   (options: --from FILE, --to FILE, --section SECTION | --before TASK | --after TASK, --tasks-dir DIR)",
     payload = "Usage: tm payload [options] [--] <handle-or-pattern>   (options: --append | --replace, --file FILE, --tasks-dir DIR)\n" ..
            "  Prints the task's payload without its four-space indent. --append adds standard input beneath it,\n" ..
@@ -730,7 +903,7 @@ local USAGE = {
 local VALUE_OPTS = {
     ["--tasks-dir"] = "tasks_dir", ["--file"] = "file", ["--section"] = "section",
     ["-p"] = "priority", ["--priority"] = "priority", ["--from"] = "from", ["--to"] = "to",
-    ["--before"] = "before", ["--after"] = "after",
+    ["--before"] = "before", ["--after"] = "after", ["--as"] = "as",
 }
 
 -- Short SHA of a commit-ish, verified to exist; nil if it does not resolve.
@@ -758,6 +931,12 @@ local function report_failure(query, reason, detail)
             "Use one of the handles shown, or a more specific pattern."))
     elseif reason == "already_completed" then
         tmio.die(string.format("Task is already completed: [%s] %s",
+            handle_of(detail.task, detail.handles), detail.task.summary))
+    elseif reason == "already_claimed" then
+        tmio.die(string.format("Task is already claimed (%s): [%s] %s",
+            detail.value or "", handle_of(detail.task, detail.handles), detail.task.summary))
+    elseif reason == "not_claimed" then
+        tmio.die(string.format("Task is not claimed: [%s] %s",
             handle_of(detail.task, detail.handles), detail.task.summary))
     elseif reason == "not_found" then
         if detail.searched then
@@ -796,10 +975,20 @@ function M.run(subcmd, args)
             filter = "pending"
         elseif a == "--all" then
             filter = "all"
+        elseif a == "--claimed" or a == "--unclaimed" then
+            if subcmd ~= "list" then tmio.die(a .. " applies only to tm list\n" .. USAGE[subcmd]) end
+            if opts.claim_filter then tmio.die("give --claimed or --unclaimed, not both\n" .. USAGE.list) end
+            opts.claim_filter = a:sub(3)
         elseif a == "--append" or a == "--replace" then
             if subcmd ~= "payload" then tmio.die(a .. " applies only to tm payload\n" .. USAGE[subcmd]) end
             if opts.mode then tmio.die("give --append or --replace, not both\n" .. USAGE.payload) end
             opts.mode = a:sub(3)
+        elseif a == "--force" then
+            if subcmd ~= "claim" then tmio.die("--force applies only to tm claim\n" .. USAGE[subcmd]) end
+            opts.force = true
+        elseif a == "--claim" then
+            if subcmd ~= "next" then tmio.die("--claim applies only to tm next\n" .. USAGE[subcmd]) end
+            opts.claim = true
         elseif a == "--git" then
             git_flag, git_at = true, #positionals + 1
         elseif a:match("^%-%-git=") then
@@ -825,6 +1014,12 @@ function M.run(subcmd, args)
     if git_flag and subcmd ~= "done" then
         tmio.die("--git applies only to tm done\n" .. USAGE[subcmd])
     end
+    if opts.as ~= nil and subcmd ~= "claim" and subcmd ~= "next" then
+        tmio.die("--as applies only to tm claim and tm next\n" .. USAGE[subcmd])
+    end
+    if opts.as ~= nil and subcmd == "next" and not opts.claim then
+        tmio.die("--as requires --claim with tm next\n" .. USAGE.next)
+    end
 
     -- For list and next, a positional starting with '+' or '@' is a tag
     -- filter; anything else names a file (`./@name` for a file so named).
@@ -843,13 +1038,16 @@ function M.run(subcmd, args)
         if #positionals > 0 then
             tmio.die("Unexpected argument: " .. positionals[1] .. " (a tag starts with + or @)\n" .. USAGE.next)
         end
-        local task, handles, warnings, err = M.next({
+        local task, handles, warnings, err, claimed_skipped = M.next({
             file = opts.file, tasks_dir = opts.tasks_dir, tags = tags, not_tags = not_tags,
+            claim = opts.claim, as = opts.as,
         })
         if err then tmio.die(err) end
         for _, w in ipairs(warnings) do io.stderr:write("tm: " .. w .. "\n") end
         if task then
             print(string.format("[%s] %s", handles[task], task.summary))
+        elseif claimed_skipped and claimed_skipped > 0 then
+            io.stderr:write(string.format("tm: no task is ready (%d claimed; see tm list)\n", claimed_skipped))
         else
             io.stderr:write("tm: no task is ready\n")
         end
@@ -876,7 +1074,10 @@ function M.run(subcmd, args)
         local files = #positionals > 0 and positionals or { cfg.active_path }
         local warned = #files > 1 and {} or nil
         for idx, f in ipairs(files) do
-            local items, err = M.format_list(f, { filter = filter, tags = tags, not_tags = not_tags, warned = warned })
+            local items, err = M.format_list(f, {
+                filter = filter, claim_filter = opts.claim_filter,
+                tags = tags, not_tags = not_tags, warned = warned,
+            })
             if not items then tmio.die(err) end
             if #files > 1 then
                 if idx > 1 then print("") end
@@ -927,6 +1128,24 @@ function M.run(subcmd, args)
         })
         if not ok then report_failure(query, res, detail) end
         print(string.format("Completed: [%s] %s", handle_of(res, detail), res.summary))
+        os.exit(0)
+    end
+
+    if subcmd == "claim" then
+        local ok, res, detail = M.claim({
+            file = opts.file, tasks_dir = opts.tasks_dir, query = query, as = opts.as, force = opts.force,
+        })
+        if not ok then report_failure(query, res, detail) end
+        print(string.format("Claimed: [%s] %s", handle_of(res, detail), res.summary))
+        os.exit(0)
+    end
+
+    if subcmd == "release" then
+        local ok, res, detail = M.release({
+            file = opts.file, tasks_dir = opts.tasks_dir, query = query,
+        })
+        if not ok then report_failure(query, res, detail) end
+        print(string.format("Released: [%s] %s", handle_of(res, detail), res.summary))
         os.exit(0)
     end
 

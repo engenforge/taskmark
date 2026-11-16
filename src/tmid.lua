@@ -188,33 +188,59 @@ function M.status(id, paths)
     return found
 end
 
--- The identifiers a task's `Depends` field cites (§4.4.2), read from the
--- whole payload outside fenced code, continuation lines included.
-function M.depends(lines, task)
+-- Locate every labeled field named `name` in a task's payload outside
+-- fenced code (§4.4.2). Returns an array of { start_line, end_line, value }
+-- (with continuation lines joined by a single space).
+function M.fields(lines, task, name)
     local out = {}
     if not task.payload_start then return out end
     local fence_char, fence_len
-    local in_depends = false
+    local start_line, end_line, parts
+    local function flush()
+        if start_line then
+            out[#out + 1] = { start_line = start_line, end_line = end_line, value = table.concat(parts, " ") }
+            start_line, end_line, parts = nil, nil, nil
+        end
+    end
     for i = task.payload_start, task.payload_end do
         local kind, fields = tmscan.classify(lines[i])
         local content = kind == "payload" and fields.content or ""
         if fence_char then
             if tmscan.fence_closes(content, fence_char, fence_len) then fence_char, fence_len = nil, nil end
-            in_depends = false
         else
             local key, value = content:match("^> %*%*([A-Za-z][A-Za-z0-9_%-]*):%*%* ?(.*)$")
             if key then
-                in_depends = key == "Depends"
-            elseif in_depends and content:match("^> ") then
-                value = content:sub(3)
+                flush()
+                if key == name then
+                    start_line, end_line, parts = i, i, { value }
+                end
+            elseif start_line and content:match("^> ") then
+                end_line = i
+                parts[#parts + 1] = content:sub(3)
             else
-                in_depends = false
+                flush()
                 fence_char, fence_len = tmscan.fence_opens(content)
             end
-            if in_depends and value then
-                for _, id in ipairs(M.refs(value)) do out[#out + 1] = id end
-            end
         end
+    end
+    flush()
+    return out
+end
+
+-- Locate the first labeled field named `name` in a task's payload outside
+-- fenced code (§4.4.2). Returns start_line, end_line, value, or nil.
+function M.field(lines, task, name)
+    local first = M.fields(lines, task, name)[1]
+    if not first then return nil end
+    return first.start_line, first.end_line, first.value
+end
+
+-- The identifiers every `Depends` field on a task cites (§4.4.2), read from
+-- the whole payload outside fenced code, continuation lines included.
+function M.depends(lines, task)
+    local out = {}
+    for _, f in ipairs(M.fields(lines, task, "Depends")) do
+        for _, id in ipairs(M.refs(f.value)) do out[#out + 1] = id end
     end
     return out
 end

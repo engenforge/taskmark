@@ -34,29 +34,33 @@ the current working directory (the layout described by the spec).
 	hooks run as for any commit, and git's own messages are shown when a
 	commit or push fails.
 
-*list* [--pending|--all] [--not _TAG_]... [_TAG_...] [--tasks-dir _DIR_] [_file_...]
+*list* [--pending|--all] [--claimed|--unclaimed] [--not _TAG_]... [_TAG_...] [--tasks-dir _DIR_] [_file_...]
 	Print one line per task, its handle and summary, e.g.
 	"[k7q2x] (A) Task text id:k7q2x", without payload blocks, to keep
-	listings short for humans and AI agents alike. By default, lists pending
-	tasks from the active task document. With *--all*, lists both pending
-	and completed tasks, each with its checkbox after the handle (`[ ]`
-	pending, `[x]` completed). An argument starting
-	with '+' or '@' is a tag: only tasks carrying every _TAG_ given, as a
-	whole word anywhere on the task line, are listed, and *--not* _TAG_
-	leaves out tasks carrying it. Given several files, each listing
-	is headed `== <file>`. A file with nothing to list prints nothing on
-	standard output and a short note on standard error. A missing file is
-	an error.
+	listings short for humans and AI agents alike. A pending task carrying
+	a `Claimed` field has ` (claimed: VALUE)` appended. By default, lists
+	pending tasks from the active task document. With *--all*, lists both
+	pending and completed tasks, each with its checkbox after the handle
+	(`[ ]` pending, `[x]` completed). *--claimed* and *--unclaimed* narrow
+	the listing to pending tasks with or without a `Claimed` field. An
+	argument starting with '+' or '@' is a tag: only tasks carrying every
+	_TAG_ given, as a whole word anywhere on the task line, are listed, and
+	*--not* _TAG_ leaves out tasks carrying it. Given several files, each
+	listing is headed `== <file>`. A file with nothing to list prints
+	nothing on standard output and a short note on standard error. A
+	missing file is an error.
 
-*next* [--not _TAG_]... [_TAG_...] [--file _FILE_] [--tasks-dir _DIR_]
-	Print the task to start, in the format of *list*: among the pending
-	tasks of _active.tm.md_ (or *--file*) that match the tag filters and
-	have no unmet dependency, the one with the highest priority flag, or
-	the first in file order when none is flagged. A dependency (see TASK
-	IDENTIFIERS) is met once the task it names is completed, in any task
-	file. A dependency naming no task counts as unmet and is reported on
-	standard error. When no task is ready, prints nothing on standard
-	output, a note on standard error, and exits 0.
+*next* [--claim [--as _NAME_]] [--not _TAG_]... [_TAG_...] [--file _FILE_] [--tasks-dir _DIR_]
+	Print the task to start, in the format of *list*: among the unclaimed
+	pending tasks of _active.tm.md_ (or *--file*) that match the tag
+	filters and have no unmet dependency, the one with the highest priority
+	flag, or the first in file order when none is flagged. A dependency (see
+	TASK IDENTIFIERS) is met once the task it names is completed, in any
+	task file. A dependency naming no task counts as unmet and is reported
+	on standard error. With *--claim*, selects and stamps `Claimed` in one
+	step under `.tm.lock`. When no task is ready, prints nothing on standard
+	output, a note on standard error (naming how many are claimed when any
+	were passed over), and exits 0.
 
 *add* _<task-text>_ [-p|--priority _PRI_] [--section _SECTION_ | --before _TASK_ | --after _TASK_] [--file _FILE_] [--tasks-dir _DIR_]
 	Add a pending task at the end of the named section's own content
@@ -76,12 +80,28 @@ the current working directory (the layout described by the spec).
 	tasks are never changed. Also reports, on standard error, any
 	identifier carried by more than one task in any task file.
 
+*claim* _<hash-or-pattern>_ [--as _NAME_] [--force] [--file _FILE_] [--tasks-dir _DIR_]
+	Find a pending task in _active.tm.md_ (or *--file*) by handle or
+	substring and stamp a `Claimed` field (`> **Claimed:** YYYY-MM-DD [NAME]`)
+	into the leading run of its labeled fields under `.tm.lock`. The
+	claimant defaults to *$TM_CLAIMANT*, then the current Git branch of
+	the working directory, or is omitted outside a Git repository. Refuses
+	with exit status 1 if the task is already claimed unless *--force* is
+	given, which replaces the field in place.
+
+*release* _<hash-or-pattern>_ [--file _FILE_] [--tasks-dir _DIR_]
+	Remove the `Claimed` field (and any blank line left directly beneath
+	the task line by the removal) from a pending task in _active.tm.md_
+	(or *--file*) under `.tm.lock`. Does not check who claimed it. Exits
+	1 if the task is not claimed.
+
 *done* _<hash-or-pattern>_ [--git [_REV_]] [--file _FILE_] [--tasks-dir _DIR_]
 	Find a pending task in _active.tm.md_ (or *--file*) by handle or
-	substring (see TASK HANDLES), mark it `- [x]` in place, and stamp a
-	Completed field with the local date into the leading run of its
-	labeled fields, adding `git:<sha>` with *--git*. Only pending tasks are
-	candidates; a match that is already completed is reported as such.
+	substring (see TASK HANDLES), mark it `- [x]` in place, remove
+	its `Claimed` field if present, and stamp a Completed field with the local date into
+	the leading run of its labeled fields, adding `git:<sha>` with *--git*.
+	Only pending tasks are candidates; a match that is already completed is
+	reported as such.
 
 *move* _<hash-or-pattern>_ [--from _FILE_] [--to _FILE_] [--section _SECTION_ | --before _TASK_ | --after _TASK_] [--tasks-dir _DIR_]
 	Move a task and its payload from one file to another (by default from
@@ -157,8 +177,9 @@ the current working directory (the layout described by the spec).
 	failure or file error.
 
 	Beyond the rules of the specification, prints non-fatal `[WARN]` lines
-	that never change the exit status: a *Created*, *Due*, or *Completed*
-	field whose value is not the registered date format; a `\*\*Key:\*\*`
+	that never change the exit status: a *Created*, *Due*, *Completed*, or
+	*Claimed* field whose value is not the registered date format; a second
+	*Claimed* field on one task; a `\*\*Key:\*\*`
 	inside a field's value, which is read as text and is usually a second
 	field written on the same line; and an identifier carried by two tasks
 	among the files given. In a completed task only the *Completed* field
@@ -231,6 +252,19 @@ the current working directory (the layout described by the spec).
 	taken as _REV_ only when the command would otherwise have two
 	arguments, so `tm done --git abc1234 parser` and `tm done parser --git`
 	both work; `--git=`_REV_ is always unambiguous.
+
+*--as* _NAME_
+	With *claim* and *next --claim*: record _NAME_ as the claimant in
+	the `Claimed` field (`> **Claimed:** YYYY-MM-DD NAME`), overriding
+	*$TM_CLAIMANT* and the current Git branch.
+
+*--claim*
+	With *next*: select the next ready task and stamp its `Claimed` field
+	in one step under `.tm.lock`.
+
+*--force*
+	With *claim*: replace an existing `Claimed` field in place instead of
+	refusing.
 
 *--sprint* _LABEL_
 	With *sweep*: bucket the swept tasks under "## Sprint _LABEL_" instead
@@ -333,7 +367,7 @@ _.tasks/archive/<YYYY>/<YYYY-MM>.tm.md_
 	never hand-authored.
 
 _<tasks-dir>/.tm.lock_
-	Transient lock directory held by *add*, *id*, *done*, *move*, *payload*, *remap*, *sweep*,
+	Transient lock directory held by *add*, *id*, *claim*, *release*, *next --claim*, *done*, *move*, *payload*, *remap*, *sweep*,
 	*archive*, and *validate --fix* for the duration of their read-modify-write,
 	so concurrent *tm* runs wait for each other instead of losing updates.
 	A stale lock left by a killed process may be removed by hand.

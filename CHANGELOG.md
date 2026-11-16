@@ -10,10 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `tm validate` emits non-fatal `[WARN]` lines for a malformed `Claimed` value (not starting with `YYYY-MM-DD`) and for a second `Claimed` field on one pending task.
+- `tm list --claimed` and `tm list --unclaimed` narrow the listing to pending tasks with or without a `Claimed` field.
+- `tm next --claim [--as NAME]` selects the next ready task and stamps its `Claimed` field in one step under `.tm.lock`.
+- `tm claim <handle>` and `tm release <handle>` stamp and clear a task's `Claimed` field under `.tm.lock`. The claimant is taken from `--as NAME`, `$TM_CLAIMANT`, or the current Git branch of the working directory (never the login name); `--force` replaces an existing claim.
 - `tm payload <handle>` prints a task's payload without its indent; `--append` adds standard input beneath it and `--replace` puts standard input in its place. The write is made under `.tm.lock`, so a payload edit no longer has to be made with an editor that can discard a concurrent `tm` change, and it is refused if the task would no longer validate.
 - `tm list`, `tm next`, `tm id`, `tm add`, `tm done`, `tm move` and `tm sweep` warn on standard error when a task file holds a task line indented one to three spaces, which they do not read as a task. Standard output and the exit status are unchanged.
 
 ### Changed
+- `tm done` removes any `Claimed` field in the same write that stamps `Completed`; `tm list` appends ` (claimed: VALUE)` to claimed pending tasks.
+- `tm next` no longer returns a claimed task, and when claimed tasks were passed over and nothing else is ready, its standard-error note reports how many are claimed and points to `tm list`.
 - **Specification (SPEC-TASKMARK-05):** registers the `Claimed` labeled field (§4.4.2) to record that a session has taken a task (`> **Claimed:** YYYY-MM-DD [claimant]`). §4.3 notes that `Claimed` joins `Depends` as payload content selection reads; §5.1 states that selection passes over claimed tasks for every session and that a claim neither satisfies nor blocks `Depends`; §5.1.1 defines atomic selection and claiming under lock, claim removal on completion or release, no automatic expiry, visibility limits across clones, and why a labeled field is used; §1.5 lists a malformed `Claimed` value among validator warnings.
 - `tm validate --fix` says so when it could not repair a file and wrote nothing, after the file's original errors.
 - `tm validate --fix` leaves a 1–3 space indented checkbox line after a blank line alone so the file fails with V7 and writes nothing, while one directly beneath a task still becomes a bullet in that task's payload.

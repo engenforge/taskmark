@@ -523,6 +523,58 @@ else
         os.execute("rm -rf " .. main)
     end
 
+    do
+        local group = "nested_worktree_claim"
+        local main, ok, setup_out = repo_with_streams("tmconfig_nested_claim")
+        local s1, s2 = main .. "/build/s1", main .. "/build/s2"
+        local active = main .. "/.tasks/active.tm.md"
+        local out, code = run_cmd(string.format("cd %s && %s init --orphan", main, tm))
+        check(group, "fixture: init --orphan with build/s1 and build/s2", ok and code == 0, setup_out .. out)
+        local s1_files, s2_files = run_cmd("ls -A " .. s1), run_cmd("ls -A " .. s2)
+
+        run_cmd(string.format("cd %s && %s add 'Claimable task A'", main, tm))
+        run_cmd(string.format("cd %s && %s add 'Claimable task B'", main, tm))
+
+        local out1_file, out2_file = main .. "/s1.out", main .. "/s2.out"
+        run_concurrently({
+            { s1, string.format("%s next --claim > %s 2>&1", tm, out1_file) },
+            { s2, string.format("%s next --claim > %s 2>&1", tm, out2_file) },
+        })
+        local h1 = (read_file(out1_file) or ""):match("^%[(%S+)%]")
+        local h2 = (read_file(out2_file) or ""):match("^%[(%S+)%]")
+        check(group, "concurrent next --claim from build/s1 and build/s2 prints two different tasks",
+            h1 ~= nil and h2 ~= nil and h1 ~= h2,
+            string.format("s1=%s s2=%s", tostring(read_file(out1_file)), tostring(read_file(out2_file))))
+
+        local body = read_file(active) or ""
+        local today = os.date("%Y-%m-%d")
+        local function task_block(id)
+            return body:match("(%- %[ %] [^\n]*id:" .. id .. "\n    > %*%*Claimed:%*%* [^\n]+)")
+        end
+        local b1, b2 = task_block(h1), task_block(h2)
+        check(group, "each session's task in main active.tm.md carries its own worktree branch",
+            b1 ~= nil and b1:find("> **Claimed:** " .. today .. " stream/s1", 1, true) ~= nil
+                and b2 ~= nil and b2:find("> **Claimed:** " .. today .. " stream/s2", 1, true) ~= nil, body)
+        check(group, "nothing is created under either worktree",
+            run_cmd("ls -A " .. s1) == s1_files and run_cmd("ls -A " .. s2) == s2_files,
+            run_cmd("ls -A " .. s1) .. " | " .. run_cmd("ls -A " .. s2))
+
+        out, code = run_cmd(string.format("cd %s && %s done %s", s1, tm, h1))
+        body = read_file(active) or ""
+        check(group, "tm done from build/s1 clears only its own task's claim",
+            code == 0
+                and not body:find("> **Claimed:** " .. today .. " stream/s1", 1, true)
+                and body:find("> **Claimed:** " .. today .. " stream/s2", 1, true) ~= nil, out .. "\n" .. body)
+
+        out, code = run_cmd(string.format("cd %s && %s sync -m 'tasks: claims'", s2, tm))
+        local status = run_cmd("git -C " .. main .. "/.tasks status --porcelain")
+        local committed = run_cmd("git -C " .. main .. " show tasks:active.tm.md")
+        check(group, "tm sync commits the claims to the tasks branch and leaves tasks worktree clean",
+            code == 0 and status == "" and committed == body, out .. status)
+
+        os.execute("rm -rf " .. main)
+    end
+
     -- Tracked layout: the task files are committed on the code branch, so
     -- each worktree checks out its own .taskmarkrc and task files, and tm
     -- uses those. It reaches for the main checkout's only when the

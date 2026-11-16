@@ -257,5 +257,64 @@ do
     os.execute("rm -rf " .. tmio.shell_quote(dir))
 end
 
+-- ── Claimed field warnings (id:gs33j) ────────────────────────────────────
+
+do
+    local clean = table.concat({
+        "# Sprint",
+        "",
+        "- [ ] Date alone",
+        "    > **Claimed:** 2026-11-16",
+        "",
+        "- [ ] Date with claimant",
+        "    > **Claimed:** 2026-11-16 stream/s1",
+        "",
+        "- [x] Completed task with bad and duplicate Claimed",
+        "    > **Completed:** 2026-11-16",
+        "    > **Claimed:** not-a-date",
+        "    > **Claimed:** 2026-11-16 second",
+        "",
+        "- [ ] Fenced bad Claimed",
+        "    ```markdown",
+        "    > **Claimed:** not-a-date",
+        "    > **Claimed:** 2026-11-16",
+        "    ```",
+        "",
+    }, "\n")
+    check("claimed warnings", "date alone, date+claimant, completed task, and fenced Claimed are clean",
+        #warnings_of(clean) == 0, tostring(#warnings_of(clean)))
+
+    for _, bad in ipairs({
+        { "missing date", "    > **Claimed:** " },
+        { "impossible date", "    > **Claimed:** 2026-02-30 stream/s1" },
+        { "claimant with no date", "    > **Claimed:** stream/s1" },
+    }) do
+        local doc = "# Sprint\n\n- [ ] Task\n" .. bad[2] .. "\n"
+        local ws = warnings_of(doc)
+        check("claimed warnings", bad[1] .. " warns",
+            #ws == 1 and ws[1].msg:find("Claimed:", 1, true) ~= nil, ws[1] and ws[1].msg or "none")
+    end
+
+    local dup = "# Sprint\n\n- [ ] Task\n    > **Claimed:** 2026-11-16 s1\n    > **Claimed:** 2026-11-16 s2\n"
+    local dws = warnings_of(dup)
+    check("claimed warnings", "two Claimed fields on one task warn",
+        #dws == 1 and dws[1].line == 5 and dws[1].msg:find("Claimed", 1, true) ~= nil, dws[1] and dws[1].msg or "none")
+
+    -- Exit status via CLI remains 0 when Claimed warns
+    local dir = string.format("/tmp/tm_val_claimed_%d_%s", os.time(), tmio.unique_token())
+    tmio.mkdir_p(dir)
+    local bad_path = dir .. "/bad_claimed.tm.md"
+    local f = assert(io.open(bad_path, "w"))
+    f:write("# Sprint\n\n- [ ] Task\n    > **Claimed:** nope\n")
+    f:close()
+    local p = io.popen("lua src/tmval.lua " .. tmio.shell_quote(bad_path) .. " 2>&1; echo __CODE__$?")
+    local out = p:read("*a")
+    p:close()
+    local code = tonumber(out:match("__CODE__(%d+)%s*$"))
+    check("claimed warnings", "CLI exits 0 when Claimed warns",
+        code == 0 and out:find("[WARN]", 1, true) ~= nil and out:find("Claimed:", 1, true) ~= nil, out)
+    os.execute("rm -rf " .. tmio.shell_quote(dir))
+end
+
 print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))
 os.exit(failed > 0 and 1 or 0)

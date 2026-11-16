@@ -31,12 +31,12 @@ Exit codes:
   0  All files are spec-compliant (or successfully repaired with --fix)
   1  Validation failed or file error
 
-[WARN] lines never change the exit code: a Created, Due, or Completed value
-that is not the registered date format, a **Key:** inside a field's value
-(read as text, not as a field), and an identifier carried by two tasks
-among the files given (`tm id` checks every task file). In a completed task
-only the Completed field is checked. Output is coloured only on a terminal,
-and never when NO_COLOR is set.
+[WARN] lines never change the exit code: a Created, Due, Completed, or Claimed
+value that is not the registered date format, a second Claimed field on one
+task, a **Key:** inside a field's value (read as text, not as a field), and an
+identifier carried by two tasks among the files given (`tm id` checks every
+task file). In a completed task only the Completed field is checked. Output is
+coloured only on a terminal, and never when NO_COLOR is set.
 
 Examples:
   tm validate .tasks/active.tm.md
@@ -325,6 +325,11 @@ local function date_field_problem(key, value)
         if not is_date(date) or not (rest == "" or (sha and #sha >= 7 and #sha <= 40)) then
             return "Completed: expected YYYY-MM-DD, optionally followed by git:<sha>, found '" .. value .. "'"
         end
+    elseif key == "Claimed" then
+        local date, rest = value:match("^(%S*)(.*)$")
+        if not is_date(date) or (rest ~= "" and not rest:match("^%s")) then
+            return "Claimed: expected YYYY-MM-DD, optionally followed by claimant text, found '" .. value .. "'"
+        end
     end
     return nil
 end
@@ -337,7 +342,11 @@ end
 local function validate_warnings(lines)
     local warnings = {}
     local in_field = false
+    local cur_task, seen_claimed = nil, false
     for i, kind, fields, _, task, fence_open in tmscan.iter(lines) do
+        if task ~= cur_task then
+            cur_task, seen_claimed = task, false
+        end
         local value
         -- A completed task is a record (§4.3.3): only the Completed stamp a
         -- tool just wrote is checked, so old text does not bury new warnings.
@@ -348,6 +357,14 @@ local function validate_warnings(lines)
                 in_field = false
             elseif key then
                 value, in_field = first, not record
+                if key == "Claimed" then
+                    if seen_claimed then
+                        warnings[#warnings + 1] = { line = i,
+                            msg = "Claimed: second Claimed field on one task (tools read the first)" }
+                    else
+                        seen_claimed = true
+                    end
+                end
                 local problem = date_field_problem(key, first)
                 if problem then warnings[#warnings + 1] = { line = i, msg = problem } end
             elseif in_field and fields.content:match("^> ") then

@@ -143,6 +143,25 @@ do
     check("depends", "reads the field and its continuation lines, not fenced text",
         #d == 2 and d[1] == "aaaaa" and d[2] == "ccccc", table.concat(d, " "))
     check("depends", "a task without the field depends on nothing", #tmid.depends(lines, tasks[2]) == 0)
+
+    local s, e, v = tmid.field(lines, tasks[1], "Depends")
+    check("field", "returns line span and joined value for multi-line field",
+        s == 3 and e == 4 and v == "id:aaaaa, id:ccccc", tostring(s) .. "," .. tostring(e) .. "," .. tostring(v))
+    local cs, ce, cv = tmid.field(lines, tasks[1], "Created")
+    check("field", "returns single-line field span and value",
+        cs == 2 and ce == 2 and cv == "2026-11-12", tostring(cs))
+    check("field", "returns nil for missing field", tmid.field(lines, tasks[1], "Claimed") == nil)
+
+    local two_deps = tmscan.lines_of([[
+- [ ] Multi-depends id:mmmmm
+    > **Depends:** id:aaaaa
+    > **Notes:** middle note
+    > **Depends:** id:bbbbb
+]])
+    local mtasks = tmscan.tasks(two_deps)
+    local md = tmid.depends(two_deps, mtasks[1])
+    check("depends", "collects identifiers from all Depends fields",
+        #md == 2 and md[1] == "aaaaa" and md[2] == "bbbbb", table.concat(md, " "))
 end
 
 print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))

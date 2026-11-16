@@ -67,11 +67,13 @@ Commands:
   sync       Commit tasks directory changes to the orphan branch
   list       Stream compact task summaries, each with a handle: the task's
              identifier, or a 4-char ephemeral hash (filter by +project/@context)
-  next       Show the task to start: the first pending one with no unmet
-             dependency
+  next       Show the task to start: the first unclaimed pending one with no
+             unmet dependency (--claim selects and claims it in one step)
   add        Safely add a task under the target heading, stamped with a new
              identifier (id:k7q2x)
   id         Stamp an identifier on every pending task that lacks one
+  claim      Claim a pending task for a working session
+  release    Release a task's claim without completing it
   done       Mark a pending task completed with ISO date and optional git SHA
   move       Promote/move a task non-destructively between task documents
   payload    Print a task's payload, or append to it or replace it from
@@ -120,7 +122,7 @@ elseif cmd == "init" then
     require("tminit").run(rest)
 elseif cmd == "sync" then
     require("tmsync").run(rest)
-elseif cmd == "list" or cmd == "done" or cmd == "move" or cmd == "add" or cmd == "next" or cmd == "id" or cmd == "payload" then
+elseif cmd == "list" or cmd == "done" or cmd == "move" or cmd == "add" or cmd == "next" or cmd == "id" or cmd == "payload" or cmd == "claim" or cmd == "release" then
     require("tmmutate").run(cmd, rest)
 elseif cmd == "check-shas" or cmd == "remap" then
     require("tmsha").run(cmd, rest)

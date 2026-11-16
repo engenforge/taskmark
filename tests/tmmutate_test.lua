@@ -1231,6 +1231,426 @@ do
     cleanup_dir(tmp)
 end
 
+-- ── tm claim and tm release ──────────────────────────────────────────────
+
+do
+    local tmp = make_temp_dir()
+    local active = tmp .. "/.tasks/active.tm.md"
+    local future = tmp .. "/.tasks/future.tm.md"
+    local completed = tmp .. "/.tasks/completed.tm.md"
+    local today = os.date("%Y-%m-%d")
+    local function valid(p) return #tmval.validate_lines(tmscan.lines_of(read(p))) == 0 end
+
+    local function tm_in(dir, cmd, env_prefix)
+        local p = io.popen(string.format("cd %s && %s lua %s %s 2>&1; echo __CODE__$?",
+            tmio.shell_quote(dir), env_prefix or "", tmio.shell_quote(tm_abs), cmd))
+        local out = p:read("*a")
+        p:close()
+        local code = tonumber(out:match("__CODE__(%d+)%s*$"))
+        return out:gsub("__CODE__%d+%s*$", ""), code
+    end
+
+    local DOC = table.concat({
+        "# Current Sprint",
+        "",
+        "- [ ] No payload task id:aaaaa",
+        "- [ ] Field run task id:bbbbb",
+        "    > **Context:** Existing context.",
+        "",
+        "- [ ] Freeform only task id:ccccc",
+        "    Some freeform note.",
+        "",
+        "- [ ] Fenced claim task id:ddddd",
+        "    ```markdown",
+        "    > **Claimed:** 2026-01-01 example",
+        "    ```",
+        "",
+        "- [x] Completed task id:eeeee",
+        "    > **Completed:** 2026-11-01",
+        "",
+    }, "\n")
+
+    local function reset()
+        tmio.mkdir_p(tmp .. "/.tasks")
+        write(active, DOC)
+        write(future, "# Planned Work\n")
+        write(completed, "# Completed Archive\n")
+    end
+
+    reset()
+
+    -- 1. Claim on all three payload shapes (outside git -> date alone)
+    local out, code = tm_in(tmp, "claim aaaaa", "TM_CLAIMANT=")
+    check("claim", "claim on task with no payload succeeds",
+        code == 0 and out:find("Claimed: [aaaaa] No payload task id:aaaaa", 1, true) ~= nil, out)
+    check("claim", "stamps date alone outside git",
+        read(active):find("- [ ] No payload task id:aaaaa\n    > **Claimed:** " .. today .. "\n", 1, true) ~= nil, read(active))
+    check("claim", "validates after claim on no-payload task", valid(active))
+
+    out, code = tm_in(tmp, "claim bbbbb --as worker-1")
+    check("claim", "claim on task with field run succeeds", code == 0, out)
+    check("claim", "joins leading field run after existing fields",
+        read(active):find("    > **Context:** Existing context.\n    > **Claimed:** " .. today .. " worker-1\n", 1, true) ~= nil, read(active))
+    check("claim", "validates after claim on field-run task", valid(active))
+
+    out, code = tm_in(tmp, "claim ccccc", "TM_CLAIMANT=env-agent")
+    check("claim", "claim on task with freeform content only succeeds (TM_CLAIMANT)", code == 0, out)
+    check("claim", "inserts blank line before freeform content (V11)",
+        read(active):find("- [ ] Freeform only task id:ccccc\n    > **Claimed:** " .. today .. " env-agent\n\n    Some freeform note.", 1, true) ~= nil, read(active))
+    check("claim", "validates after claim on freeform-only task", valid(active))
+
+    -- 2. Second claim refused and file byte-identical; --force replaces in place
+    local before_refuse = read(active)
+    out, code = tm_in(tmp, "claim bbbbb --as worker-2")
+    check("claim", "second claim is refused with exit 1",
+        code ~= 0 and out:find("already claimed", 1, true) ~= nil and out:find(today .. " worker-1", 1, true) ~= nil, out)
+    check("claim", "refused second claim leaves file byte-identical", read(active) == before_refuse)
+
+    out, code = tm_in(tmp, "claim bbbbb --as worker-2 --force")
+    check("claim", "--force replaces existing Claimed field in place",
+        code == 0 and read(active):find("    > **Claimed:** " .. today .. " worker-2\n", 1, true) ~= nil
+            and not read(active):find("worker-1", 1, true), read(active))
+    check("claim", "validates after --force", valid(active))
+
+    -- 3. Release restores file byte-for-byte in all three payload shapes
+    out, code = tm_in(tmp, "release aaaaa")
+    check("release", "release on no-payload task succeeds",
+        code == 0 and out:find("Released: [aaaaa] No payload task id:aaaaa", 1, true) ~= nil, out)
+    out, code = tm_in(tmp, "release bbbbb")
+    check("release", "release on field-run task succeeds", code == 0, out)
+    out, code = tm_in(tmp, "release ccccc")
+    check("release", "release on freeform-only task succeeds", code == 0, out)
+    check("release", "releasing all three restores file byte-for-byte", read(active) == DOC, read(active))
+
+    -- 4. Release of unclaimed task exits 1
+    out, code = tm_in(tmp, "release aaaaa")
+    check("release", "release on unclaimed task exits 1",
+        code ~= 0 and out:find("not claimed", 1, true) ~= nil, out)
+
+    -- 5. Fenced Claimed line is not a claim
+    out, code = tm_in(tmp, "release ddddd")
+    check("claim", "fenced Claimed line is not treated as a claim by release", code ~= 0, out)
+    out, code = tm_in(tmp, "claim ddddd --as real")
+    check("claim", "can claim task whose payload has fenced Claimed example", code == 0, out)
+
+    -- 6. Completed task refused, bad claimant refused
+    out, code = tm_in(tmp, "claim eeeee --as x")
+    check("claim", "refuses completed task", code ~= 0 and out:find("already completed", 1, true) ~= nil, out)
+    out, code = tm_in(tmp, "claim aaaaa --as 'bad **Key:** val'")
+    check("claim", "refuses claimant containing **Key:**", code ~= 0, out)
+    out, code = tm_in(tmp, "claim aaaaa --as 'line1\nline2'")
+    check("claim", "refuses claimant containing newline", code ~= 0, out)
+
+    -- 7. Git branch fallback for claimant
+    if HAVE_GIT then
+        local gtmp = make_temp_dir()
+        tmio.mkdir_p(gtmp .. "/.tasks")
+        write(gtmp .. "/.tasks/active.tm.md", "# Current Sprint\n\n- [ ] Git task id:ggggg\n")
+        io.popen(string.format("git -C %s init -q -b stream/s1 && git -C %s config user.name t && git -C %s config user.email t@e",
+            tmio.shell_quote(gtmp), tmio.shell_quote(gtmp), tmio.shell_quote(gtmp))):close()
+        out, code = tm_in(gtmp, "claim ggggg", "TM_CLAIMANT=")
+        check("claim", "uses current git branch when --as and TM_CLAIMANT are unset",
+            code == 0 and read(gtmp .. "/.tasks/active.tm.md"):find("> **Claimed:** " .. today .. " stream/s1", 1, true) ~= nil,
+            out .. "\n" .. read(gtmp .. "/.tasks/active.tm.md"))
+        cleanup_dir(gtmp)
+    end
+
+    -- 8. Six concurrent tm claim runs on one task give exactly one success
+    reset()
+    local jobs = {}
+    for i = 1, 6 do
+        jobs[#jobs + 1] = string.format("(lua %s claim aaaaa --as w%d > out%d.txt 2>&1; echo $? > rc%d.txt) &",
+            tm_abs, i, i, i)
+    end
+    io.popen(string.format("cd %s && ( %s wait )", tmio.shell_quote(tmp), table.concat(jobs, " "))):read("*a")
+    local successes = 0
+    for i = 1, 6 do
+        local rc = tonumber(read(tmp .. "/rc" .. i .. ".txt"))
+        if rc == 0 then successes = successes + 1 end
+    end
+    check("claim", "six concurrent tm claim runs on one task give exactly one success", successes == 1, "successes=" .. successes)
+    check("claim", "file validates after concurrent claims", valid(active))
+
+    cleanup_dir(tmp)
+end
+
+-- ── tm next with claims and --claim ──────────────────────────────────────
+
+do
+    local tmp = make_temp_dir()
+    local active = tmp .. "/.tasks/active.tm.md"
+    local future = tmp .. "/.tasks/future.tm.md"
+    local completed = tmp .. "/.tasks/completed.tm.md"
+    local today = os.date("%Y-%m-%d")
+    local function valid(p) return #tmval.validate_lines(tmscan.lines_of(read(p))) == 0 end
+
+    local function tm_in(dir, cmd, env_prefix)
+        local p = io.popen(string.format("cd %s && %s lua %s %s 2>&1; echo __CODE__$?",
+            tmio.shell_quote(dir), env_prefix or "", tmio.shell_quote(tm_abs), cmd))
+        local out = p:read("*a")
+        p:close()
+        local code = tonumber(out:match("__CODE__(%d+)%s*$"))
+        return out:gsub("__CODE__%d+%s*$", ""), code
+    end
+
+    local function reset(body)
+        tmio.mkdir_p(tmp .. "/.tasks")
+        write(active, body)
+        write(future, "# Planned Work\n")
+        write(completed, "# Completed Archive\n")
+    end
+
+    -- 1. Skips claimed first task and claimed (A) task; claimed dependency still blocks
+    reset(table.concat({
+        "# Current Sprint",
+        "",
+        "- [ ] (A) Claimed high priority id:aaaaa",
+        "    > **Claimed:** 2026-11-16 other",
+        "",
+        "- [ ] Claimed first id:bbbbb",
+        "    > **Claimed:** 2026-11-16 other",
+        "",
+        "- [ ] Blocked by claimed id:ccccc",
+        "    > **Depends:** id:aaaaa",
+        "",
+        "- [ ] Ready task id:ddddd",
+        "",
+    }, "\n"))
+    local out, code = tm_in(tmp, "next")
+    check("next-claim", "skips claimed (A), claimed first, and task depending on claimed task",
+        code == 0 and out:find("[ddddd] Ready task", 1, true) ~= nil, out)
+
+    -- 2. Sequential tm next --claim returns two different tasks
+    reset(table.concat({
+        "# Current Sprint",
+        "",
+        "- [ ] First task id:aaaaa",
+        "- [ ] Second task id:bbbbb",
+        "",
+    }, "\n"))
+    out, code = tm_in(tmp, "next --claim --as s1")
+    check("next-claim", "first next --claim returns first task",
+        code == 0 and out:find("[aaaaa] First task", 1, true) ~= nil, out)
+    local out2, code2 = tm_in(tmp, "next --claim --as s2")
+    check("next-claim", "second next --claim returns second task",
+        code2 == 0 and out2:find("[bbbbb] Second task", 1, true) ~= nil, out2)
+
+    -- 3. When everything left is claimed, stderr notes how many and points to tm list
+    local out3, code3 = tm_in(tmp, "next")
+    check("next-claim", "when all tasks are claimed, exits 0 and stderr notes claimed count and tm list",
+        code3 == 0 and out3:find("no task is ready", 1, true) ~= nil
+            and out3:find("2 claimed", 1, true) ~= nil
+            and out3:find("tm list", 1, true) ~= nil, out3)
+
+    -- 4. tm next after tm release returns the task again
+    local _, rel_code = tm_in(tmp, "release aaaaa")
+    check("next-claim", "release succeeds", rel_code == 0)
+    out, code = tm_in(tmp, "next")
+    check("next-claim", "tm next after tm release returns the released task",
+        code == 0 and out:find("[aaaaa] First task", 1, true) ~= nil, out)
+
+    -- 5. N concurrent tm next --claim runs over N ready tasks
+    reset(table.concat({
+        "# Current Sprint",
+        "",
+        "- [ ] Task 1 id:t0001",
+        "- [ ] Task 2 id:t0002",
+        "- [ ] Task 3 id:t0003",
+        "- [ ] Task 4 id:t0004",
+        "",
+    }, "\n"))
+    local jobs = {}
+    for i = 1, 4 do
+        jobs[#jobs + 1] = string.format("(lua %s next --claim --as w%d > out%d.txt 2> err%d.txt; echo $? > rc%d.txt) &",
+            tm_abs, i, i, i, i)
+    end
+    io.popen(string.format("cd %s && ( %s wait )", tmio.shell_quote(tmp), table.concat(jobs, " "))):read("*a")
+    local seen = {}
+    local distinct = 0
+    for i = 1, 4 do
+        local line = read(tmp .. "/out" .. i .. ".txt"):match("^%[(%S+)%]")
+        if line and not seen[line] then
+            seen[line] = true
+            distinct = distinct + 1
+        end
+    end
+    check("next-claim", "4 concurrent next --claim runs print 4 distinct handles", distinct == 4, "distinct=" .. distinct)
+    check("next-claim", "file validates after concurrent next --claim", valid(active))
+
+    -- 6. One ready task and several concurrent runs -> exactly one prints a task
+    reset("# Current Sprint\n\n- [ ] Only task id:only1\n")
+    jobs = {}
+    for i = 1, 4 do
+        jobs[#jobs + 1] = string.format("(lua %s next --claim --as w%d > one_out%d.txt 2> one_err%d.txt) &",
+            tm_abs, i, i, i)
+    end
+    io.popen(string.format("cd %s && ( %s wait )", tmio.shell_quote(tmp), table.concat(jobs, " "))):read("*a")
+    local printed = 0
+    for i = 1, 4 do
+        if read(tmp .. "/one_out" .. i .. ".txt"):find("[only1]", 1, true) then printed = printed + 1 end
+    end
+    check("next-claim", "with 1 ready task and 4 concurrent runs, exactly 1 prints a task", printed == 1, "printed=" .. printed)
+
+    -- 7. --claim refused on non-next commands, --as refused on non-next/non-claim commands
+    out, code = tm_in(tmp, "list --claim")
+    check("next-claim", "--claim refused on list", code ~= 0 and out:find("Usage: tm list", 1, true) ~= nil, out)
+    out, code = tm_in(tmp, "list --as foo")
+    check("next-claim", "--as refused on list", code ~= 0 and out:find("Usage: tm list", 1, true) ~= nil, out)
+    out, code = tm_in(tmp, "next --as foo")
+    check("next-claim", "--as without --claim refused on next", code ~= 0 and out:find("Usage: tm next", 1, true) ~= nil, out)
+
+    -- 8. Multiple Depends fields: second Depends still blocks
+    reset(table.concat({
+        "# Current Sprint",
+        "",
+        "- [x] Done dep id:aaaaa",
+        "    > **Completed:** 2026-11-10",
+        "",
+        "- [ ] Blocked by second Depends id:ccccc",
+        "    > **Depends:** id:aaaaa",
+        "    > **Notes:** middle",
+        "    > **Depends:** id:bbbbb",
+        "",
+        "- [ ] Pending dep id:bbbbb",
+        "",
+    }, "\n"))
+    out, code = tm_in(tmp, "next")
+    check("next-claim", "second Depends field still blocks task",
+        code == 0 and out:find("[bbbbb] Pending dep", 1, true) ~= nil, out)
+
+    -- 9. Duplicate Claimed fields: release and done remove all of them
+    reset(table.concat({
+        "# Current Sprint",
+        "",
+        "- [ ] Double claimed release id:aaaaa",
+        "    > **Claimed:** 2026-11-16 s1",
+        "    > **Notes:** keep me",
+        "    > **Claimed:** 2026-11-16 s2",
+        "",
+        "- [ ] Double claimed done id:bbbbb",
+        "    > **Claimed:** 2026-11-16 s1",
+        "    > **Claimed:** 2026-11-16 s2",
+        "",
+    }, "\n"))
+    out, code = tm_in(tmp, "release aaaaa")
+    local after_rel = read(active):match("Double claimed release.-Double claimed done") or ""
+    check("release", "release removes all Claimed fields when duplicated",
+        code == 0 and not after_rel:find("**Claimed:**", 1, true)
+            and after_rel:find("> **Notes:** keep me", 1, true) ~= nil, read(active))
+    out, code = tm_in(tmp, "done bbbbb")
+    check("done-claim", "done removes all Claimed fields when duplicated",
+        code == 0 and not read(active):find("**Claimed:**", 1, true), read(active))
+
+    cleanup_dir(tmp)
+end
+
+-- ── tm done clears claim; tm list shows/filters claims ───────────────────
+
+do
+    local tmp = make_temp_dir()
+    local active = tmp .. "/.tasks/active.tm.md"
+    local future = tmp .. "/.tasks/future.tm.md"
+    local completed = tmp .. "/.tasks/completed.tm.md"
+    local function valid(p) return #tmval.validate_lines(tmscan.lines_of(read(p))) == 0 end
+
+    local function tm_in(dir, cmd)
+        local p = io.popen(string.format("cd %s && lua %s %s 2>&1; echo __CODE__$?",
+            tmio.shell_quote(dir), tmio.shell_quote(tm_abs), cmd))
+        local out = p:read("*a")
+        p:close()
+        local code = tonumber(out:match("__CODE__(%d+)%s*$"))
+        return out:gsub("__CODE__%d+%s*$", ""), code
+    end
+
+    tmio.mkdir_p(tmp .. "/.tasks")
+    write(active, table.concat({
+        "# Current Sprint",
+        "",
+        "- [ ] +api Only claim id:aaaaa",
+        "    > **Claimed:** 2026-11-16 s1",
+        "",
+        "- [ ] +cli Claim in field run id:bbbbb",
+        "    > **Context:** Context line.",
+        "    > **Claimed:** 2026-11-16 s2",
+        "",
+        "- [ ] +api Claim before freeform id:ccccc",
+        "    > **Claimed:** 2026-11-16 s3",
+        "",
+        "    Freeform body.",
+        "",
+        "- [ ] +api Unclaimed task id:ddddd",
+        "",
+        "- [x] Done with leftover claim id:eeeee",
+        "    > **Completed:** 2026-11-10",
+        "    > **Claimed:** 2026-11-09 old",
+        "",
+    }, "\n"))
+    write(future, "# Planned Work\n\n- [ ] Future claimed id:fffff\n    > **Claimed:** 2026-11-16 s4\n")
+    write(completed, "# Completed Archive\n")
+
+    -- 1. tm list shows (claimed: VALUE) for pending claimed tasks, leaves unclaimed unchanged, hides done's Claimed
+    local out, code = tm_in(tmp, "list")
+    check("list-claim", "default list appends (claimed: VALUE) to claimed pending tasks",
+        code == 0 and out:find("[aaaaa] +api Only claim id:aaaaa (claimed: 2026-11-16 s1)", 1, true) ~= nil, out)
+    check("list-claim", "default list leaves unclaimed task line unchanged",
+        out:find("[ddddd] +api Unclaimed task id:ddddd\n", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "list --all")
+    check("list-claim", "--all shows (claimed: VALUE) on pending and hides leftover Claimed on done",
+        code == 0
+            and out:find("[aaaaa] [ ] +api Only claim id:aaaaa (claimed: 2026-11-16 s1)", 1, true) ~= nil
+            and out:find("[ddddd] [ ] +api Unclaimed task id:ddddd\n", 1, true) ~= nil
+            and out:find("[eeeee] [x] Done with leftover claim id:eeeee\n", 1, true) ~= nil, out)
+
+    -- 2. --claimed and --unclaimed, combined with tags, and refused on other commands
+    out, code = tm_in(tmp, "list --claimed +api")
+    check("list-claim", "--claimed +api lists only claimed +api tasks",
+        code == 0
+            and out:find("[aaaaa]", 1, true) ~= nil
+            and out:find("[ccccc]", 1, true) ~= nil
+            and not out:find("[bbbbb]", 1, true)
+            and not out:find("[ddddd]", 1, true)
+            and not out:find("[eeeee]", 1, true), out)
+
+    out, code = tm_in(tmp, "list --unclaimed +api")
+    check("list-claim", "--unclaimed +api lists only unclaimed +api tasks",
+        code == 0
+            and out:find("[ddddd]", 1, true) ~= nil
+            and not out:find("[aaaaa]", 1, true)
+            and not out:find("[eeeee]", 1, true), out)
+
+    out, code = tm_in(tmp, "next --claimed")
+    check("list-claim", "--claimed refused on next", code ~= 0 and out:find("Usage: tm next", 1, true) ~= nil, out)
+    out, code = tm_in(tmp, "next --unclaimed")
+    check("list-claim", "--unclaimed refused on next", code ~= 0 and out:find("Usage: tm next", 1, true) ~= nil, out)
+
+    -- 3. tm done clears Claimed in all three payload shapes
+    for _, id in ipairs({ "aaaaa", "bbbbb", "ccccc" }) do
+        out, code = tm_in(tmp, "done " .. id)
+        check("done-claim", "done " .. id .. " succeeds", code == 0, out)
+    end
+    local body = read(active)
+    check("done-claim", "Claimed is removed from all three completed tasks",
+        not body:find("2026-11-16 s1", 1, true)
+            and not body:find("2026-11-16 s2", 1, true)
+            and not body:find("2026-11-16 s3", 1, true), body)
+    check("done-claim", "Context and Freeform body are preserved",
+        body:find("> **Context:** Context line.", 1, true) ~= nil
+            and body:find("    Freeform body.", 1, true) ~= nil, body)
+    check("done-claim", "active.tm.md validates after done on claimed tasks", valid(active))
+
+    -- 4. tm move keeps Claimed; tm sweep carries completed task's payload unchanged
+    out, code = tm_in(tmp, "move fffff")
+    check("move-claim", "move from future to active keeps Claimed field",
+        code == 0 and read(active):find("Future claimed id:fffff\n    > **Claimed:** 2026-11-16 s4", 1, true) ~= nil, read(active))
+
+    out, code = tm_in(tmp, "sweep")
+    check("sweep-claim", "sweep carries completed task payload unchanged",
+        code == 0 and read(completed):find("    Freeform body.", 1, true) ~= nil, read(completed))
+
+    cleanup_dir(tmp)
+end
+
 -- ── Summary ──────────────────────────────────────────────────────────────
 
 print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))
