@@ -121,6 +121,24 @@ do
             return false
         end)())
 
+    errs = tmval.validate_lines(tmscan.lines_of("# S\n\n - [ ] One space\n"))
+    check("V7", "an indented task line outside a task is named as one, with both remedies",
+        #errs == 1 and errs[1].rule == "V7" and errs[1].msg:find("task line indented 1 space:", 1, true) ~= nil
+        and errs[1].msg:find("column 0", 1, true) ~= nil and errs[1].msg:find("payload", 1, true) ~= nil,
+        errs[1] and errs[1].msg)
+
+    errs = tmval.validate_lines(tmscan.lines_of("- [ ] Task\n\n   - [x] Three spaces\n"))
+    check("V7", "so is one beneath a task",
+        #errs == 1 and errs[1].rule == "V7" and errs[1].msg:find("task line indented 3 spaces:", 1, true) ~= nil,
+        errs[1] and errs[1].msg)
+
+    errs = tmval.validate_lines(tmscan.lines_of("- [ ] Task\n    - [ ] Four spaces\n"))
+    check("V7", "a four-space task token is a payload matter, not V7",
+        (function()
+            for _, e in ipairs(errs) do if e.rule == "V7" then return false end end
+            return true
+        end)())
+
     errs = tmval.validate_lines(tmscan.lines_of("# S\n\n1. first item\ncontinued at column 0\n"))
     check("V7", "a wrapped list line at column 0 conforms", #errs == 0)
 end
@@ -171,6 +189,70 @@ do
         code == 0 and out:find("[WARN] warn.tm.md: Line 4: ", 1, true) ~= nil, out)
     check("cli", "an identifier on two tasks is a warning, not a failure",
         code == 0 and out:find("[WARN] id:aaaaa is carried by 2 tasks: clean.tm.md:3, warn.tm.md:3", 1, true) ~= nil, out)
+
+    -- --fix never guesses whether an indented task line is a misplaced
+    -- task or a sub-item: it leaves the file alone and says so.
+    local indented_body = "# Sprint\n\n  - [ ] Indented task id:qspwd\n      > **Context:** two-space indent\n"
+    write("indented.tm.md", indented_body)
+    out, code = validate("--fix indented.tm.md")
+    check("fix indented task", "an indented task block is not repaired",
+        code == 1 and out:find("[FAIL] Line 3: V7: task line indented 2 spaces", 1, true) ~= nil
+        and out:find("wrote nothing", 1, true) ~= nil, out)
+    check("fix indented task", "the file stays byte-for-byte unchanged",
+        assert(io.open(dir .. "/indented.tm.md", "r")):read("*a") == indented_body)
+
+    local tight_sub = "# Sprint\n\n- [ ] Parent task\n  - [ ] Tight sub-item\n"
+    write("tight_sub.tm.md", tight_sub)
+    out, code = validate("--fix tight_sub.tm.md")
+    check("fix indented task", "tight sub-item directly beneath a task becomes a payload bullet",
+        code == 0 and out:find("[FIXED]", 1, true) ~= nil
+        and assert(io.open(dir .. "/tight_sub.tm.md", "r")):read("*a") ==
+            "# Sprint\n\n- [ ] Parent task\n    - Tight sub-item\n", out)
+
+    local after_blank = "# Sprint\n\n- [ ] First task\n\n  - [ ] Second task\n      > **Notes:** indented\n"
+    write("after_blank.tm.md", after_blank)
+    out, code = validate("--fix after_blank.tm.md")
+    check("fix indented task", "indented task after a blank line is left alone with V7",
+        code == 1 and out:find("Line 5: V7: task line indented 2 spaces", 1, true) ~= nil
+        and out:find("wrote nothing", 1, true) ~= nil
+        and assert(io.open(dir .. "/after_blank.tm.md", "r")):read("*a") == after_blank, out)
+
+    -- --fix: unrepairable file reports that nothing was written and leaves bytes untouched
+    local unfixable_body = "# S\n\n- [ ] Task\n\n    ```lua\n    local x = 1\n"
+    write("unfixable.tm.md", unfixable_body)
+    out, code = validate("--fix unfixable.tm.md")
+    check("fix unrepairable", "exits 1", code == 1, out)
+    local fail_pos = out:find("[FAIL] Line ", 1, true)
+    local wrote_pos = out:find("wrote nothing", 1, true)
+    check("fix unrepairable", "prints [FAIL] lines then says --fix could not repair and wrote nothing",
+        fail_pos ~= nil and wrote_pos ~= nil and fail_pos < wrote_pos
+        and out:find("unfixable.tm.md", 1, true) ~= nil
+        and out:find("--fix could not repair", 1, true) ~= nil, out)
+    local after_unfix = assert(io.open(dir .. "/unfixable.tm.md", "r")):read("*a")
+    check("fix unrepairable", "file stays byte-for-byte unchanged", after_unfix == unfixable_body)
+
+    -- --fix: when nothing is written, line numbers match the file on disk
+    local shifted_body = table.concat({
+        "---",
+        "title: Old",
+        "---",
+        "",
+        "# S",
+        "",
+        "- [ ] Task",
+        "",
+        "    ```lua",
+        "    local x = 1",
+        "",
+    }, "\n")
+    write("shifted.tm.md", shifted_body)
+    local plain_out = validate("shifted.tm.md")
+    local fix_out, fix_code = validate("--fix shifted.tm.md")
+    check("fix unrepairable", "line numbers match the untouched file on disk",
+        fix_code == 1
+        and plain_out:find("Line 9: V12:", 1, true) ~= nil
+        and fix_out:find("Line 9: V12:", 1, true) ~= nil,
+        "plain:\n" .. plain_out .. "\nfix:\n" .. fix_out)
 
     os.execute("rm -rf " .. tmio.shell_quote(dir))
 end

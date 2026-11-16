@@ -39,7 +39,8 @@ the current working directory (the layout described by the spec).
 	"[k7q2x] (A) Task text id:k7q2x", without payload blocks, to keep
 	listings short for humans and AI agents alike. By default, lists pending
 	tasks from the active task document. With *--all*, lists both pending
-	and completed tasks (completed tasks marked `[x]`). An argument starting
+	and completed tasks, each with its checkbox after the handle (`[ ]`
+	pending, `[x]` completed). An argument starting
 	with '+' or '@' is a tag: only tasks carrying every _TAG_ given, as a
 	whole word anywhere on the task line, are listed, and *--not* _TAG_
 	leaves out tasks carrying it. Given several files, each listing
@@ -130,8 +131,16 @@ the current working directory (the layout described by the spec).
 	continuations and sub-lists, wrapped labeled fields, missing blank lines
 	after labeled fields, prose directly beneath a task or payload, hard
 	tabs, leading frontmatter blocks from pre-0.4 files, and top-level dash
-	bullets converted to '\*'). The file's newline style is preserved. Exits 0 on success (or successful
-	repair), 1 on validation failure or file error.
+	bullets converted to '\*'). The file's newline style is preserved. A
+	task line indented one to three spaces is never promoted to a task,
+	since it may be a sub-item: directly beneath a task (with no blank line)
+	it becomes a bullet in that task's payload, and after a blank line or
+	outside a task it is reported and left alone. If
+	*--fix* cannot make a file conform, it leaves the file untouched, prints
+	the file's original errors (so every line number matches the file on
+	disk) followed by a line stating that *--fix* could not repair the file
+	and wrote nothing, and exits 1. Exits 0 on success (or successful repair), 1 on validation
+	failure or file error.
 
 	Beyond the rules of the specification, prints non-fatal `[WARN]` lines
 	that never change the exit status: a *Created*, *Due*, or *Completed*

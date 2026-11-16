@@ -297,6 +297,18 @@ do
     check("tasks", "task record carries summary", t and t.summary == "(A) Test task")
 end
 
+-- ── task_indent: a task line but for one to three leading spaces ─────────
+
+do
+    check("task_indent", "one to three spaces", tmscan.task_indent(" - [ ] a") == 1
+        and tmscan.task_indent("  - [x] a") == 2 and tmscan.task_indent("   - [ ] a") == 3)
+    check("task_indent", "a task line at column 0 is not indented", tmscan.task_indent("- [ ] a") == nil)
+    check("task_indent", "four spaces is a payload line", tmscan.task_indent("    - [ ] a") == nil)
+    check("task_indent", "an indented plain bullet is not a task line", tmscan.task_indent("  - a") == nil)
+    local found = tmscan.indented_task_lines({ "# S", "", "  - [ ] a", "- [ ] b", "    - [ ] c" })
+    check("task_indent", "indented_task_lines gives their line numbers", #found == 1 and found[1] == 3)
+end
+
 -- ── Summary ──────────────────────────────────────────────────────────────
 
 print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))

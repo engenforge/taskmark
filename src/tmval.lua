@@ -140,7 +140,13 @@ local function validate_body(lines, errors)
         if not raw:match("^%s*$") then
             local lead = raw:match("^[ \t]*")
             if #lead > 0 and raw:sub(1, 4) ~= "    " then
-                if in_task then
+                local task_indent = tmscan.task_indent(raw)
+                if task_indent then
+                    -- Only the author knows which was meant, so say both.
+                    add(i, "V7", string.format("task line indented %d space%s: a task starts at column 0, " ..
+                        "and a sub-item belongs in a payload, indented four spaces",
+                        task_indent, task_indent == 1 and "" or "s"))
+                elseif in_task then
                     add(i, "V7", "payload line's first four columns are not four literal spaces")
                 else
                     add(i, "V7", "indented line outside a task: top-level text starts at column 0, " ..
@@ -413,7 +419,8 @@ local function fix_document(lines)
             new_lines[#new_lines + 1] = ""
 
         elseif in_payload then
-            if not raw:match("^%s*$") then
+            if not raw:match("^%s*$")
+                and not (not fence_open and prev_kind == "blank" and tmscan.task_indent(raw)) then
                 local lead = raw:match("^[ \t]*")
                 if #lead > 0 and raw:sub(1, 4) ~= "    " then
                     raw = "    " .. raw:gsub("^[ \t]*", "")
@@ -621,14 +628,15 @@ local function run(args)
                     if not ok_w then tmio.die(werr) end
                     print(string.format("%s[FIXED]%s %s (repaired %d error(s); now conforms to SPEC-TASKMARK-05).", TERM_YELLOW, TERM_RESET, file, #errors))
                 else
-                    for _, e in ipairs(remaining_errors) do
+                    for _, e in ipairs(errors) do
                         if #files > 1 then
                             print(string.format("%s[FAIL]%s %s: Line %d: %s: %s", TERM_RED, TERM_RESET, file, e.line, e.rule, e.msg))
                         else
                             print(string.format("%s[FAIL]%s Line %d: %s: %s", TERM_RED, TERM_RESET, e.line, e.rule, e.msg))
                         end
                     end
-                    total_errors = total_errors + #remaining_errors
+                    print(string.format("%s[FAIL]%s %s: --fix could not repair this file; wrote nothing.", TERM_RED, TERM_RESET, file))
+                    total_errors = total_errors + #errors
                 end
             else
                 for _, e in ipairs(errors) do

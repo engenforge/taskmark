@@ -258,4 +258,20 @@ function M.parse_iso8601(s)
     return nil
 end
 
+-- The indent (1 to 3) of a line that would be a task line but for that
+-- many leading spaces, or nil. Such a line is not a task: tasks() skips it.
+function M.task_indent(line)
+    local lead = line:match("^( ? ? ?)%- %[[ x]%] ")
+    return lead and #lead > 0 and #lead or nil
+end
+
+-- Line numbers of the lines task_indent() recognises.
+function M.indented_task_lines(lines)
+    local out = {}
+    for i, line in ipairs(lines) do
+        if M.task_indent(line) then out[#out + 1] = i end
+    end
+    return out
+end
+
 return M
