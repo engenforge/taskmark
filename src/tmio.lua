@@ -90,13 +90,27 @@ function M.acquire_lock(dir, opts)
         return nil, "directory does not exist: " .. dir
     end
     local path = lock_path(dir)
+    local cmd = "mkdir " .. M.shell_quote(path) .. " 2>/dev/null"
     for attempt = 0, retries do
-        if exec_ok("mkdir " .. M.shell_quote(path) .. " 2>/dev/null") then
+        if exec_ok(cmd) then
             held[path] = true
             return true
         end
         if not M.dir_exists(path) and not M.file_exists(path) then
-            return nil, "cannot create lock: " .. path
+            -- Another process may have released the lock between our failed
+            -- mkdir and the existence check; probe once with LC_ALL=C so a
+            -- transient EEXIST ("File exists") retries instead of aborting.
+            local p = io.popen("LC_ALL=C mkdir " .. M.shell_quote(path) .. " 2>&1; echo __E__$?")
+            local out = p and p:read("*a") or ""
+            if p then p:close() end
+            local rc = tonumber(out:match("__E__(%d+)%s*$"))
+            if rc == 0 then
+                held[path] = true
+                return true
+            end
+            if not out:find("File exists", 1, true) then
+                return nil, "cannot create lock: " .. path
+            end
         end
         if attempt < retries then
             -- Fractional sleep is common but not POSIX; fall back to whole

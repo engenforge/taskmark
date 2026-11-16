@@ -235,6 +235,18 @@ do
     os.execute("lua -e " .. tmio.shell_quote(lua_src) .. " 2>/dev/null")
     check("lock", "die releases held locks", not tmio.file_exists(dir .. "/.tm.lock"))
 
+    -- Concurrent lock/unlock storm must not trip TOCTOU "cannot create lock".
+    local storm_lua = string.format(
+        "package.path=%q..'/?.lua;'..package.path; local t=require('tmio'); " ..
+        "for k=1,5 do t.with_lock(%q, function() end) end", src, dir)
+    local jobs = {}
+    for i = 1, 8 do
+        jobs[#jobs + 1] = string.format("(lua -e %s || echo FAIL_%d) &", tmio.shell_quote(storm_lua), i)
+    end
+    local storm_out = io.popen("( " .. table.concat(jobs, " ") .. " wait ) 2>&1"):read("*a")
+    check("lock", "concurrent lock/unlock storm never fails with cannot create lock",
+        not storm_out:find("FAIL_", 1, true) and not storm_out:find("cannot create lock", 1, true), storm_out)
+
     -- Nonexistent directory fails immediately without spinning retries
     local nosuch = test_sandbox .. "/nonexistent_dir"
     local t0 = os.clock()
