@@ -3,7 +3,7 @@
 --
 -- Dispatches subcommands to the taskmark modules in this repository:
 --   tm init       Bootstrap a project's .tasks/ directory with starter files
---   tm list/next  Compact listings; tm add/done/move/id/payload edit tasks by handle
+--   tm list/tree/next  Compact listings and dependency trees; tm add/done/move/id/payload edit tasks by handle
 --   tm sweep      Move completed tasks from active.tm.md into completed.tm.md
 --   tm archive    Archive aged-out sections from completed.tm.md into archive/
 --   tm validate   Validate taskmark file(s) for spec compliance
@@ -67,6 +67,7 @@ Commands:
   sync       Commit tasks directory changes to the orphan branch
   list       Stream compact task summaries, each with a handle: the task's
              identifier, or a 4-char ephemeral hash (filter by +project/@context)
+  tree       Display a dependency forest showing independent chains of work
   next       Show the task to start: the first unclaimed pending one with no
              unmet dependency (--claim selects and claims it in one step)
   add        Safely add a task under the target heading, stamped with a new
@@ -122,7 +123,7 @@ elseif cmd == "init" then
     require("tminit").run(rest)
 elseif cmd == "sync" then
     require("tmsync").run(rest)
-elseif cmd == "list" or cmd == "done" or cmd == "move" or cmd == "add" or cmd == "next" or cmd == "id" or cmd == "payload" or cmd == "claim" or cmd == "release" then
+elseif cmd == "list" or cmd == "tree" or cmd == "done" or cmd == "move" or cmd == "add" or cmd == "next" or cmd == "id" or cmd == "payload" or cmd == "claim" or cmd == "release" then
     require("tmmutate").run(cmd, rest)
 elseif cmd == "check-shas" or cmd == "remap" then
     require("tmsha").run(cmd, rest)

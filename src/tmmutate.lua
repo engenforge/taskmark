@@ -3,8 +3,9 @@
 -- (SPEC-TASKMARK-06 tooling).
 --
 -- Subcommands:
---   tm list [--pending|--all] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]
---   tm next [--not TAG]... [TAG...] [--file FILE] [--tasks-dir DIR]
+--   tm list [--pending|--all] [--claimed|--unclaimed] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]
+--   tm tree [--pending|--all] [--ascii] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]
+--   tm next [--claim [--as NAME]] [--not TAG]... [TAG...] [--file FILE] [--tasks-dir DIR]
 --   tm id [--tasks-dir DIR] [file...]
 --   tm done <handle-or-pattern> [--git [REV]] [--file FILE] [--tasks-dir DIR]
 --   tm move <handle-or-pattern> [--from FILE] [--to FILE] [--section SECTION] [--tasks-dir DIR]
@@ -270,6 +271,29 @@ local function has_tags(summary, tags, not_tags)
     return true
 end
 
+-- `paths` plus `extra` when it is not already among them (defined below).
+local with_file
+
+-- Claimed field value for a pending task, or nil for done / unclaimed.
+local function claim_of(lines, task)
+    if task.done then return nil end
+    local _, _, val = tmid.field(lines, task, "Claimed")
+    return val
+end
+
+-- Build an id -> "pending"|"done" map from an in-memory task list, matching
+-- tmid.statuses's rule that a pending copy wins over a completed one.
+local function statuses_from_tasks(tasks)
+    local out = {}
+    for _, t in ipairs(tasks) do
+        local id = tmid.of(t.summary)
+        if id and (not t.done or out[id] == nil) then
+            out[id] = t.done and "done" or "pending"
+        end
+    end
+    return out
+end
+
 -- Compact one-line-per-task listing of a file. opts.filter: "pending"
 -- (default) or "all", which also shows each task's checkbox; opts.tags /
 -- opts.not_tags: tags a task must / must not carry; opts.claim_filter:
@@ -285,11 +309,7 @@ function M.format_list(file_or_lines, opts)
     local handles = M.handles(tasks)
     local out = {}
     for _, t in ipairs(tasks) do
-        local claimed
-        if not t.done then
-            local _, _, val = tmid.field(lines, t, "Claimed")
-            claimed = val
-        end
+        local claimed = claim_of(lines, t)
         local claim_ok = true
         if opts.claim_filter == "claimed" then
             claim_ok = not t.done and claimed ~= nil
@@ -304,6 +324,172 @@ function M.format_list(file_or_lines, opts)
         elseif not t.done then
             local suffix = claimed and (" (claimed: " .. claimed .. ")") or ""
             out[#out + 1] = string.format("[%s] %s%s", handles[t], t.summary, suffix)
+        end
+    end
+    return out
+end
+
+-- ── tm tree ───────────────────────────────────────────────────────────────
+
+-- Format a top-down dependency forest (blocker -> unblocked) for `file_or_lines`.
+-- Independent chains are separated by blank lines; handles are shown without
+-- brackets. opts: filter ("pending"|"all"), tags, not_tags, ascii, tasks_dir,
+-- warned, cfg, dep_statuses. Returns lines array, or nil, reason.
+function M.format_tree(file_or_lines, opts)
+    opts = opts or {}
+    local lines = file_or_lines
+    if type(file_or_lines) == "string" then
+        lines = read_file(file_or_lines, opts.warned)
+        if not lines then return nil, "no such file: " .. file_or_lines end
+    end
+    local tasks = tmscan.tasks(lines)
+    local handles = M.handles(tasks)
+
+    local dep_statuses = opts.dep_statuses
+    if not dep_statuses then
+        if type(file_or_lines) == "string" then
+            local cfg = opts.cfg or tmconfig.resolve({ tasks_dir = opts.tasks_dir })
+            dep_statuses = tmid.statuses(with_file(tmid.task_files(cfg), file_or_lines))
+        else
+            dep_statuses = statuses_from_tasks(tasks)
+        end
+    end
+
+    local included, by_id = {}, {}
+    for _, t in ipairs(tasks) do
+        local id = tmid.of(t.summary)
+        local keep = (opts.filter == "all" or not t.done) and has_tags(t.summary, opts.tags, opts.not_tags)
+        if keep then
+            included[#included + 1] = t
+            if id and not by_id[id] then by_id[id] = t end
+        end
+    end
+
+    local parents, children, claimed = {}, {}, {}
+    local self_dep, needs_ext, unknown_deps = {}, {}, {}
+    for _, t in ipairs(included) do
+        parents[t], children[t], needs_ext[t], unknown_deps[t] = {}, {}, {}, {}
+        claimed[t] = claim_of(lines, t)
+    end
+
+    for _, t in ipairs(included) do
+        local seen_dep = {}
+        for _, dep in ipairs(tmid.depends(lines, t)) do
+            if not seen_dep[dep] then
+                seen_dep[dep] = true
+                local target = by_id[dep]
+                if target == t then
+                    self_dep[t] = true
+                elseif target then
+                    parents[t][#parents[t] + 1] = target
+                    children[target][#children[target] + 1] = t
+                else
+                    local st = dep_statuses[dep]
+                    if st == "pending" then
+                        needs_ext[t][#needs_ext[t] + 1] = tmid.PREFIX .. dep
+                    elseif st == nil then
+                        unknown_deps[t][#unknown_deps[t] + 1] = tmid.PREFIX .. dep
+                    end
+                end
+            end
+        end
+    end
+
+    local function is_ready(t)
+        if t.done or claimed[t] or self_dep[t] then return false end
+        if #needs_ext[t] > 0 or #unknown_deps[t] > 0 then return false end
+        for _, p in ipairs(parents[t]) do
+            if not p.done then return false end
+        end
+        return true
+    end
+
+    local function format_node(t, extra)
+        local parts = { handles[t] }
+        if t.done then
+            parts[#parts + 1] = "[x]"
+        elseif claimed[t] then
+            parts[#parts + 1] = "(claimed: " .. claimed[t] .. ")"
+        elseif is_ready(t) then
+            parts[#parts + 1] = "(ready)"
+        end
+        if self_dep[t] then
+            parts[#parts + 1] = "(cycle!)"
+        end
+        if #needs_ext[t] > 0 then
+            parts[#parts + 1] = "(needs: " .. table.concat(needs_ext[t], ", ") .. ")"
+        end
+        if #unknown_deps[t] > 0 then
+            parts[#parts + 1] = "(unknown: " .. table.concat(unknown_deps[t], ", ") .. ")"
+        end
+        for _, note in ipairs(extra) do
+            parts[#parts + 1] = "(" .. note .. ")"
+        end
+        parts[#parts + 1] = t.summary
+        return table.concat(parts, " ")
+    end
+
+    local branch = opts.ascii and "|-- " or "├── "
+    local last_branch = opts.ascii and "`-- " or "└── "
+    local pipe = opts.ascii and "|   " or "│   "
+    local space = "    "
+
+    local out, expanded, in_path = {}, {}, {}
+
+    local function walk(t, prefix, is_last, parent_task, is_root)
+        local lead = is_root and "" or (prefix .. (is_last and last_branch or branch))
+        if in_path[t] then
+            out[#out + 1] = lead .. format_node(t, { "cycle!" })
+            return
+        end
+        if not is_root and expanded[t] then
+            out[#out + 1] = lead .. format_node(t, { "see above" })
+            return
+        end
+        local extra = {}
+        if is_root and #parents[t] > 0 then
+            -- Second-pass entry point for a cycle: show its unmet blockers.
+            local unmet = {}
+            for _, p in ipairs(parents[t]) do
+                if not p.done then
+                    unmet[#unmet + 1] = tmid.PREFIX .. (tmid.of(p.summary) or handles[p])
+                end
+            end
+            if #unmet > 0 then
+                extra[#extra + 1] = "needs: " .. table.concat(unmet, ", ")
+            end
+        elseif not is_root and #parents[t] > 1 then
+            local others = {}
+            for _, p in ipairs(parents[t]) do
+                if p ~= parent_task and not p.done and not in_path[p] then
+                    others[#others + 1] = tmid.PREFIX .. (tmid.of(p.summary) or handles[p])
+                end
+            end
+            if #others > 0 then
+                extra[#extra + 1] = "also needs: " .. table.concat(others, ", ")
+            end
+        end
+        out[#out + 1] = lead .. format_node(t, extra)
+        expanded[t] = true
+        in_path[t] = true
+        local child_prefix = is_root and "" or (prefix .. (is_last and space or pipe))
+        local kids = children[t]
+        for idx, c in ipairs(kids) do
+            walk(c, child_prefix, idx == #kids, t, false)
+        end
+        in_path[t] = nil
+    end
+
+    for _, t in ipairs(included) do
+        if #parents[t] == 0 then
+            if #out > 0 then out[#out + 1] = "" end
+            walk(t, "", true, nil, true)
+        end
+    end
+    for _, t in ipairs(included) do
+        if not expanded[t] then
+            if #out > 0 then out[#out + 1] = "" end
+            walk(t, "", true, nil, true)
         end
     end
     return out
@@ -612,7 +798,7 @@ end
 -- ── tm add ────────────────────────────────────────────────────────────────
 
 -- `paths` plus `extra` when it is not already among them.
-local function with_file(paths, extra)
+with_file = function(paths, extra)
     for _, p in ipairs(paths) do
         if p == extra then return paths end
     end
@@ -818,19 +1004,18 @@ end
 local function select_next(lines, file, cfg, opts)
     local tasks = tmscan.tasks(lines)
     local handles = M.handles(tasks)
-    local all = with_file(tmid.task_files(cfg), file)
-    local status, warnings = {}, {}
+    local status = tmid.statuses(with_file(tmid.task_files(cfg), file))
+    local warnings = {}
     local best
     local claimed_skipped = 0
     for _, t in ipairs(tasks) do
         if not t.done and has_tags(t.summary, opts.tags, opts.not_tags) then
-            if tmid.field(lines, t, "Claimed") then
+            if claim_of(lines, t) then
                 claimed_skipped = claimed_skipped + 1
             else
                 local ready = true
                 for _, dep in ipairs(tmid.depends(lines, t)) do
-                    if status[dep] == nil then status[dep] = tmid.status(dep, all) or "unknown" end
-                    if status[dep] == "unknown" then
+                    if status[dep] == nil then
                         warnings[#warnings + 1] = string.format("[%s] depends on %s%s, which names no task",
                             handles[t], tmid.PREFIX, dep)
                     end
@@ -887,6 +1072,7 @@ end
 
 local USAGE = {
     list = "Usage: tm list [--pending|--all] [--claimed|--unclaimed] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]   (TAG: +project or @context)",
+    tree = "Usage: tm tree [--pending|--all] [--ascii] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]   (TAG: +project or @context)",
     next = "Usage: tm next [--claim [--as NAME]] [--not TAG]... [TAG...] [--file FILE] [--tasks-dir DIR]   (TAG: +project or @context)",
     id   = "Usage: tm id [--tasks-dir DIR] [file...]",
     done = "Usage: tm done [options] [--] <handle-or-pattern>   (options: --git [REV], --file FILE, --tasks-dir DIR)",
@@ -979,6 +1165,9 @@ function M.run(subcmd, args)
             if subcmd ~= "list" then tmio.die(a .. " applies only to tm list\n" .. USAGE[subcmd]) end
             if opts.claim_filter then tmio.die("give --claimed or --unclaimed, not both\n" .. USAGE.list) end
             opts.claim_filter = a:sub(3)
+        elseif a == "--ascii" then
+            if subcmd ~= "tree" then tmio.die("--ascii applies only to tm tree\n" .. USAGE[subcmd]) end
+            opts.ascii = true
         elseif a == "--append" or a == "--replace" then
             if subcmd ~= "payload" then tmio.die(a .. " applies only to tm payload\n" .. USAGE[subcmd]) end
             if opts.mode then tmio.die("give --append or --replace, not both\n" .. USAGE.payload) end
@@ -1021,17 +1210,17 @@ function M.run(subcmd, args)
         tmio.die("--as requires --claim with tm next\n" .. USAGE.next)
     end
 
-    -- For list and next, a positional starting with '+' or '@' is a tag
+    -- For list, tree, and next, a positional starting with '+' or '@' is a tag
     -- filter; anything else names a file (`./@name` for a file so named).
     local tags = {}
-    if subcmd == "list" or subcmd == "next" then
+    if subcmd == "list" or subcmd == "tree" or subcmd == "next" then
         local others = {}
         for _, p in ipairs(positionals) do
             if p:match("^[+@]") then tags[#tags + 1] = p else others[#others + 1] = p end
         end
         positionals = others
     elseif #not_tags > 0 then
-        tmio.die("--not applies only to tm list and tm next\n" .. USAGE[subcmd])
+        tmio.die("--not applies only to tm list, tm tree, and tm next\n" .. USAGE[subcmd])
     end
 
     if subcmd == "next" then
@@ -1069,15 +1258,30 @@ function M.run(subcmd, args)
         os.exit(0)
     end
 
-    if subcmd == "list" then
+    if subcmd == "list" or subcmd == "tree" then
         local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
         local files = #positionals > 0 and positionals or { cfg.active_path }
         local warned = #files > 1 and {} or nil
+        local dep_statuses
+        if subcmd == "tree" then
+            local all = tmid.task_files(cfg)
+            for _, f in ipairs(files) do with_file(all, f) end
+            dep_statuses = tmid.statuses(all)
+        end
         for idx, f in ipairs(files) do
-            local items, err = M.format_list(f, {
-                filter = filter, claim_filter = opts.claim_filter,
-                tags = tags, not_tags = not_tags, warned = warned,
-            })
+            local items, err
+            if subcmd == "tree" then
+                items, err = M.format_tree(f, {
+                    filter = filter, ascii = opts.ascii,
+                    tags = tags, not_tags = not_tags, warned = warned,
+                    cfg = cfg, dep_statuses = dep_statuses,
+                })
+            else
+                items, err = M.format_list(f, {
+                    filter = filter, claim_filter = opts.claim_filter,
+                    tags = tags, not_tags = not_tags, warned = warned,
+                })
+            end
             if not items then tmio.die(err) end
             if #files > 1 then
                 if idx > 1 then print("") end

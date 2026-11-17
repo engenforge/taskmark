@@ -169,6 +169,24 @@ function M.describe_duplicate(d)
     return string.format("%s%s is carried by %d tasks: %s", M.PREFIX, d.id, #d.places, table.concat(places, ", "))
 end
 
+-- Status ("pending" or "done") of every identified task across `paths`,
+-- reading each file once. A pending copy wins over a completed one, so a
+-- duplicated identifier never unblocks a dependant.
+function M.statuses(paths)
+    local out = {}
+    for _, path in ipairs(paths) do
+        local content = read(path)
+        if content and content:find(M.PREFIX, 1, true) then
+            for _, t in ipairs(identified_tasks(content)) do
+                if not t.done or out[t.id] == nil then
+                    out[t.id] = t.done and "done" or "pending"
+                end
+            end
+        end
+    end
+    return out
+end
+
 -- Whether the task named `id` is "pending" or "done", searching `paths` in
 -- order; nil when no task line carries it. A pending copy wins over a
 -- completed one, so a duplicated identifier never unblocks a dependant.

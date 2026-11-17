@@ -5,7 +5,7 @@
 .nh
 .ad l
 .\" Begin generated content:
-.TH "tm" "1" "2026\-11\-16"
+.TH "tm" "1" "2026\-11\-17"
 .PP
 .SH NAME
 tm \- universal taskmark utility
@@ -61,6 +61,19 @@ argument starting with '\&+'\& or '\&@'\& is a tag: only tasks carrying every
 listing is headed `== <file>`.\& A file with nothing to list prints
 nothing on standard output and a short note on standard error.\& A
 missing file is an error.\&
+.PP
+.RE
+\fBtree\fR [\-\-pending|\-\-all] [\-\-ascii] [\-\-not \fITAG\fR].\&.\&.\& [\fITAG\fR.\&.\&.\&] [\-\-tasks\-dir \fIDIR\fR] [\fIfile\fR.\&.\&.\&]
+.RS 4
+Display a top\-down dependency forest (blocker to unblocked) for the
+active task document or the given files, showing handles without
+brackets.\& Each root is an independent chain of work.\& Ready tasks are
+marked `(ready)`, claimed tasks `(claimed: VALUE)`, and completed tasks
+(with \fB\-\-all\fR) `[x]`.\& Diamond dependencies expand once and
+show `(also needs: .\&.\&.\&)` on the first branch and `(see above)` on later
+ones; blockers outside the displayed set (in other files or excluded
+by filters) or unknown identifiers are noted inline.\& Accepts the same
+tag filters and file arguments as \fBlist\fR.\&
 .PP
 .RE
 \fBnext\fR [\-\-claim [\-\-as \fINAME\fR]] [\-\-not \fITAG\fR].\&.\&.\& [\fITAG\fR.\&.\&.\&] [\-\-file \fIFILE\fR] [\-\-tasks\-dir \fIDIR\fR]
@@ -255,19 +268,27 @@ Print the version and exit.\&
 .SH OPTIONS
 \fB\-\-pending\fR
 .RS 4
-With \fBlist\fR: output only pending tasks (the default).\&
+With \fBlist\fR and \fBtree\fR: output only pending tasks (the default).\&
 .PP
 .RE
 \fB\-\-all\fR
 .RS 4
-With \fBlist\fR: output both pending and completed tasks.\& Each task is
-marked with its checkbox (`[ ]` pending, `[x]` completed).\&
+With \fBlist\fR and \fBtree\fR: output both pending and completed tasks.\& \fBlist\fR
+marks each task with its checkbox (`[ ]` pending, `[x]` completed);
+\fBtree\fR marks completed tasks with `[x]` and omits `[ ]` on pending
+tasks.\&
+.PP
+.RE
+\fB\-\-ascii\fR
+.RS 4
+With \fBtree\fR: use ASCII connectors (`|\-\- `, \``\-\- \`, `|   `) instead
+of Unicode box\-drawing characters.\&
 .PP
 .RE
 \fB\-\-not\fR \fITAG\fR
 .RS 4
-With \fBlist\fR and \fBnext\fR: leave out tasks whose line carries \fITAG\fR
-(e.\&g.\& `\-\-not @review`).\& May be repeated.\&
+With \fBlist\fR, \fBtree\fR, and \fBnext\fR: leave out tasks whose line carries
+\fITAG\fR (e.\&g.\& `\-\-not @review`).\& May be repeated.\&
 .PP
 .RE
 \fB\-p\fR, \fB\-\-priority\fR \fIPRI\fR

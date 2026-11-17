@@ -50,6 +50,17 @@ the current working directory (the layout described by the spec).
 	nothing on standard output and a short note on standard error. A
 	missing file is an error.
 
+*tree* [--pending|--all] [--ascii] [--not _TAG_]... [_TAG_...] [--tasks-dir _DIR_] [_file_...]
+	Display a top-down dependency forest (blocker to unblocked) for the
+	active task document or the given files, showing handles without
+	brackets. Each root is an independent chain of work. Ready tasks are
+	marked `(ready)`, claimed tasks `(claimed: VALUE)`, and completed tasks
+	(with *--all*) `[x]`. Diamond dependencies expand once and
+	show `(also needs: ...)` on the first branch and `(see above)` on later
+	ones; blockers outside the displayed set (in other files or excluded
+	by filters) or unknown identifiers are noted inline. Accepts the same
+	tag filters and file arguments as *list*.
+
 *next* [--claim [--as _NAME_]] [--not _TAG_]... [_TAG_...] [--file _FILE_] [--tasks-dir _DIR_]
 	Print the task to start, in the format of *list*: among the unclaimed
 	pending tasks of _active.tm.md_ (or *--file*) that match the tag
@@ -207,15 +218,21 @@ the current working directory (the layout described by the spec).
 
 # OPTIONS
 *--pending*
-	With *list*: output only pending tasks (the default).
+	With *list* and *tree*: output only pending tasks (the default).
 
 *--all*
-	With *list*: output both pending and completed tasks. Each task is
-	marked with its checkbox (`[ ]` pending, `[x]` completed).
+	With *list* and *tree*: output both pending and completed tasks. *list*
+	marks each task with its checkbox (`[ ]` pending, `[x]` completed);
+	*tree* marks completed tasks with `[x]` and omits `[ ]` on pending
+	tasks.
+
+*--ascii*
+	With *tree*: use ASCII connectors (`|-- `, \``-- \`, `|   `) instead
+	of Unicode box-drawing characters.
 
 *--not* _TAG_
-	With *list* and *next*: leave out tasks whose line carries _TAG_
-	(e.g. `--not @review`). May be repeated.
+	With *list*, *tree*, and *next*: leave out tasks whose line carries
+	_TAG_ (e.g. `--not @review`). May be repeated.
 
 *-p*, *--priority* _PRI_
 	With *add*: assign a priority flag `(A)`-`(Z)` to the task.

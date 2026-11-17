@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `tm tree [--pending|--all] [--ascii] [--not TAG]... [TAG...]` displays a top-down dependency forest (blocker to unblocked) with handles shown without brackets, separating independent chains of work and flagging `(ready)` / `(claimed: VALUE)` state, diamond cross-references, cycles, and external or unknown blockers.
+
 ---
 
 ## [0.6.0] - 2026-11-16

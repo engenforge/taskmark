@@ -1651,6 +1651,174 @@ do
     cleanup_dir(tmp)
 end
 
+-- ── 23. tm tree ─────────────────────────────────────────────────────────────
+
+do
+    local lines = tmscan.lines_of([[
+# Sprint
+
+- [ ] +claim @spec Specify claiming id:t1ewr
+
+- [ ] +claim @lua Implement claim id:vb6g7
+    > **Depends:** id:t1ewr
+
+- [ ] +claim @lua Update next id:hs2tw
+    > **Depends:** id:vb6g7
+
+- [ ] +claim @lua Update done id:7k6tn
+    > **Depends:** id:vb6g7
+
+- [ ] +claim @lua Parallel test id:gj3qb
+    > **Depends:** id:hs2tw id:7k6tn
+
+- [ ] Independent task id:430s6
+    > **Claimed:** 2026-11-16 s1
+
+- [x] Already done id:done1
+
+- [ ] Depends on done id:aftr1
+    > **Depends:** id:done1
+]])
+
+    local tree = tmmutate.format_tree(lines)
+    local joined = table.concat(tree, "\n")
+    check("tree-unit", "handles have no brackets",
+        joined:find("t1ewr (ready)", 1, true) ~= nil
+            and joined:find("[t1ewr]", 1, true) == nil, joined)
+    check("tree-unit", "diamond shows also needs on first and see above on second",
+        joined:find("gj3qb (also needs: id:7k6tn)", 1, true) ~= nil
+            and joined:find("gj3qb (see above)", 1, true) ~= nil, joined)
+    check("tree-unit", "claimed root shows claimed value instead of ready",
+        joined:find("430s6 (claimed: 2026-11-16 s1)", 1, true) ~= nil, joined)
+    check("tree-unit", "task depending on done task is a ready root",
+        joined:find("aftr1 (ready)", 1, true) ~= nil
+            and joined:find("done1", 1, true) == nil, joined)
+    check("tree-unit", "independent chains separated by blank line",
+        joined:find("\n\n430s6 (claimed:", 1, true) ~= nil, joined)
+
+    local ascii_tree = tmmutate.format_tree(lines, { ascii = true })
+    local ascii_joined = table.concat(ascii_tree, "\n")
+    local expected_ascii = table.concat({
+        "t1ewr (ready) +claim @spec Specify claiming id:t1ewr",
+        "`-- vb6g7 +claim @lua Implement claim id:vb6g7",
+        "    |-- hs2tw +claim @lua Update next id:hs2tw",
+        "    |   `-- gj3qb (also needs: id:7k6tn) +claim @lua Parallel test id:gj3qb",
+        "    `-- 7k6tn +claim @lua Update done id:7k6tn",
+        "        `-- gj3qb (see above) +claim @lua Parallel test id:gj3qb",
+        "",
+        "430s6 (claimed: 2026-11-16 s1) Independent task id:430s6",
+        "",
+        "aftr1 (ready) Depends on done id:aftr1",
+    }, "\n")
+    check("tree-unit", "exact ascii diamond tree output",
+        ascii_joined == expected_ascii, ascii_joined)
+
+    local all_tree = tmmutate.format_tree(lines, { filter = "all" })
+    local all_joined = table.concat(all_tree, "\n")
+    check("tree-unit", "--all includes completed task and links dependant under it",
+        all_joined:find("done1 [x]", 1, true) ~= nil
+            and all_joined:find("aftr1 (ready)", 1, true) ~= nil, all_joined)
+
+    -- Self-dependency, cycle root, ancestor exclusion, and unknown dependency
+    local cycle_lines = tmscan.lines_of([[
+- [ ] Self dep id:self1
+    > **Depends:** id:self1
+
+- [ ] Task A id:aaaa1
+    > **Depends:** id:cccc3
+
+- [ ] Task B id:bbbb2
+    > **Depends:** id:aaaa1
+
+- [ ] Task C id:cccc3
+    > **Depends:** id:bbbb2 id:aaaa1
+
+- [ ] Task D id:dddd4
+    > **Depends:** id:zzzzz
+]])
+    local ctree = table.concat(tmmutate.format_tree(cycle_lines), "\n")
+    check("tree-unit", "self-dependency is flagged (cycle!) and not ready",
+        ctree:find("self1 (cycle!) Self dep id:self1", 1, true) ~= nil, ctree)
+    check("tree-unit", "top of cycle shows its unmet blocker",
+        ctree:find("aaaa1 (needs: id:cccc3) Task A id:aaaa1", 1, true) ~= nil, ctree)
+    check("tree-unit", "cycle terminates and marks (cycle!)",
+        ctree:find("aaaa1 (cycle!)", 1, true) ~= nil, ctree)
+    check("tree-unit", "also needs excludes ancestors on the active path",
+        ctree:find("cccc3 (also needs:", 1, true) == nil, ctree)
+    check("tree-unit", "unknown dependency is marked inline",
+        ctree:find("dddd4 (unknown: id:zzzzz)", 1, true) ~= nil, ctree)
+end
+
+do
+    local tmp = make_temp_dir()
+    tmio.mkdir_p(tmp .. "/.tasks")
+    local active = tmp .. "/.tasks/active.tm.md"
+    local future = tmp .. "/.tasks/future.tm.md"
+    local completed = tmp .. "/.tasks/completed.tm.md"
+
+    write(active, [[
+# Active
+
+- [ ] +api Root one id:rrrr1
+
+- [ ] +api Child one id:cccc1
+    > **Depends:** id:rrrr1
+
+- [ ] +ui Blocked by future id:bbbb1
+    > **Depends:** id:ffff1
+
+- [ ] +api Unblocked by completed id:dddd1
+    > **Depends:** id:eeee1
+]])
+    write(future, [[
+# Future
+
+- [ ] Future blocker id:ffff1
+]])
+    write(completed, [[
+# Completed
+
+- [x] Done blocker id:eeee1
+    > **Completed:** 2026-11-15
+]])
+
+    local out, code = tm_in(tmp, "tree")
+    check("tree-cli", "tm tree exits 0", code == 0, out)
+    check("tree-cli", "tm tree resolves completed cross-file dep as ready",
+        out:find("dddd1 (ready)", 1, true) ~= nil, out)
+    check("tree-cli", "tm tree flags pending future cross-file dep",
+        out:find("bbbb1 (needs: id:ffff1)", 1, true) ~= nil, out)
+    check("tree-cli", "tm tree links in-file parent to child",
+        out:find("rrrr1 (ready)", 1, true) ~= nil
+            and out:find("cccc1 +api Child one", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "tree +api")
+    check("tree-cli", "tm tree +api filters by tag",
+        code == 0 and out:find("rrrr1", 1, true) ~= nil and out:find("bbbb1", 1, true) == nil, out)
+
+    out, code = tm_in(tmp, "tree --not +ui")
+    check("tree-cli", "tm tree --not +ui excludes tag",
+        code == 0 and out:find("rrrr1", 1, true) ~= nil and out:find("bbbb1", 1, true) == nil, out)
+
+    out, code = tm_in(tmp, "tree --help")
+    check("tree-cli", "tm tree --help exits 0", code == 0 and out:find("Usage: tm tree", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "list --ascii")
+    check("tree-cli", "--ascii refused on list", code ~= 0 and out:find("Usage: tm list", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "tree --claimed")
+    check("tree-cli", "--claimed refused on tree", code ~= 0 and out:find("Usage: tm tree", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "tree .tasks/active.tm.md .tasks/future.tm.md")
+    check("tree-cli", "multiple files print == file headers",
+        code == 0
+            and out:find("== .tasks/active.tm.md", 1, true) ~= nil
+            and out:find("== .tasks/future.tm.md", 1, true) ~= nil
+            and out:find("ffff1 (ready) Future blocker id:ffff1", 1, true) ~= nil, out)
+
+    cleanup_dir(tmp)
+end
+
 -- ── Summary ──────────────────────────────────────────────────────────────
 
 print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))
