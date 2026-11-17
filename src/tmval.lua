@@ -26,7 +26,6 @@ Usage:
 Options:
   --fix                   Automatically repair common formatting errors
   --strict                Exit 1 if any warnings are emitted
-  --all-warnings          Also warn on multi-word keys under non-lifecycle fields
   -h, --help              Show this help message
 
 Exit codes:
@@ -340,16 +339,13 @@ local function date_field_problem(key, value)
     return nil
 end
 
-local LIFECYCLE_FIELDS = { Depends = true, Claimed = true, Completed = true }
-
 -- Non-fatal findings in labeled fields (§1.5 permits warnings; none fails
 -- a document): a registered date field whose value is not the registered
 -- format, a `**Key:**` inside a value, and a continuation line starting
--- with a multi-word `**Key name:**` (scoped to lifecycle fields on pending
--- tasks unless `opts.all_warnings` is set). Fenced and freeform payload
+-- with a multi-word `**Key name:**`, which was meant as a field of its own
+-- but is read as part of the field above. Fenced and freeform payload
 -- content, and code spans, are never inspected. Returns { line, msg }.
-local function validate_warnings(lines, opts)
-    opts = opts or {}
+local function validate_warnings(lines)
     local warnings = {}
     local in_field, active_key = false, nil
     local cur_task, seen_claimed = nil, false
@@ -358,7 +354,6 @@ local function validate_warnings(lines, opts)
             cur_task, seen_claimed = task, false
         end
         local value
-        local skip_second = false
         -- A completed task is a record (§4.3.3): only the Completed stamp a
         -- tool just wrote is checked, so old text does not bury new warnings.
         local record = task and task.done
@@ -382,13 +377,12 @@ local function validate_warnings(lines, opts)
                 value = fields.content:sub(3)
                 local bad_key = value:match("^(%*%*[A-Za-z][^%*]*:%*%*)")
                 if bad_key then
-                    skip_second = true
-                    if opts.all_warnings or LIFECYCLE_FIELDS[active_key] then
-                        warnings[#warnings + 1] = { line = i,
-                            msg = string.format(
-                                "continuation line starts with '%s', which is not a valid single-word field key and is read as part of '%s': move it above '%s' or make it a payload bullet",
-                                bad_key, active_key, active_key) }
-                    end
+                    warnings[#warnings + 1] = { line = i,
+                        msg = string.format(
+                            "continuation line starts with '%s', which is not a valid single-word field key and is read as part of '%s': move it above '%s' or make it a payload bullet",
+                            bad_key, active_key, active_key) }
+                    -- Look for a second key only in the text after it.
+                    value = value:sub(#bad_key + 1)
                 end
             else
                 in_field, active_key = false, nil
@@ -397,7 +391,7 @@ local function validate_warnings(lines, opts)
             in_field, active_key = false, nil
         end
         -- A key quoted in a code span is being talked about, not written.
-        local second = not skip_second and value and value:gsub("`[^`]*`", ""):match("%*%*[A-Za-z][A-Za-z0-9_%-]*:%*%*")
+        local second = value and value:gsub("`[^`]*`", ""):match("%*%*[A-Za-z][A-Za-z0-9_%-]*:%*%*")
         if second then
             warnings[#warnings + 1] = { line = i, msg = "value contains '" .. second ..
                 "', which is read as text, not as a field: write one field per line" }
@@ -604,7 +598,6 @@ local function run(args)
     local files = {}
     local fix_mode = false
     local strict_mode = false
-    local all_warnings = false
     local end_of_options = false
     for _, a in ipairs(args) do
         if not end_of_options and (a == "-h" or a == "--help") then
@@ -613,8 +606,6 @@ local function run(args)
             fix_mode = true
         elseif not end_of_options and a == "--strict" then
             strict_mode = true
-        elseif not end_of_options and a == "--all-warnings" then
-            all_warnings = true
         elseif not end_of_options and a == "--" then
             end_of_options = true
         else
@@ -659,7 +650,7 @@ local function run(args)
 
             local lines = tmscan.lines_of(raw_content)
             local errors = validate_lines(lines)
-            for _, w in ipairs(validate_warnings(lines, { all_warnings = all_warnings })) do warn(file, w.line, w.msg) end
+            for _, w in ipairs(validate_warnings(lines)) do warn(file, w.line, w.msg) end
 
             if #errors == 0 then
                 print(string.format("%s[PASS]%s %s conforms to SPEC-TASKMARK-06.", TERM_GREEN, TERM_RESET, file))

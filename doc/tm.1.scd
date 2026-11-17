@@ -176,7 +176,7 @@ the current working directory (the layout described by the spec).
 	files, which can go in the message of the task commit that records the
 	remapping.
 
-*validate* [--fix] [--strict] [--all-warnings] [file...]
+*validate* [--fix] [--strict] [file...]
 	Validate taskmark file(s) for SPEC-TASKMARK-06 compliance. If no _file_
 	is given, defaults to the configured active file. If *--fix* is given,
 	automatically repairs common formatting errors (over-indented bullet
@@ -200,9 +200,9 @@ the current working directory (the layout described by the spec).
 	the registered date format; a second *Claimed* field on one task;
 	a `\*\*Key:\*\*` inside a field's value, which is read as text and is
 	usually a second field written on the same line; a continuation line
-	starting with a multi-word `\*\*Key name:\*\*` under *Depends*,
-	*Claimed*, or *Completed* on a pending task (or under any field with
-	*--all-warnings*); a pending task depending on one still pending in
+	starting with a multi-word `\*\*Key name:\*\*` on a pending task,
+	which is read as part of the field above it (beneath *Depends*, any
+	identifier on it becomes a dependency); a pending task depending on one still pending in
 	the configured future file, looked up in every task file even when
 	only the active file is validated; and an identifier
 	carried by two tasks
@@ -250,11 +250,6 @@ the current working directory (the layout described by the spec).
 
 *--strict*
 	With *validate*: exit 1 if any `[WARN]` line is emitted.
-
-*--all-warnings*
-	With *validate*: also warn on multi-word `\*\*Key name:\*\*`
-	continuation lines under non-lifecycle fields (such as *Created* or
-	*Branch*).
 
 *--not* _TAG_
 	With *list*, *tree*, and *next*: leave out tasks whose line carries

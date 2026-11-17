@@ -425,20 +425,26 @@ do
 ]])
     check("multi-word key", "legitimate wrapped Depends line does not warn", #w == 0, w[1] and w[1].msg)
 
-    local harmless = [[
+    w = warnings_of([[
 - [ ] Task
     > **Created:** 2026-11-15
     > **Found by:** someone
     > **Branch:** main
     > **Split from:** id:x1234
-]]
-    w = warnings_of(harmless)
-    check("multi-word key", "harmless fields (Created/Branch) are quiet by default", #w == 0, w[1] and w[1].msg)
+]])
+    check("multi-word key", "warns under any field, not only lifecycle ones",
+        #w == 2 and has(w, 3, "**Found by:**") and has(w, 3, "Created")
+            and has(w, 5, "**Split from:**") and has(w, 5, "Branch"),
+        w[1] and w[1].msg or "none")
 
-    local w_all = tmval.validate_warnings(tmscan.lines_of(harmless), { all_warnings = true })
-    check("multi-word key", "harmless fields warn under all_warnings",
-        #w_all == 2 and has(w_all, 3, "**Found by:**") and has(w_all, 5, "**Split from:**"),
-        w_all[1] and w_all[1].msg or "none")
+    w = warnings_of([[
+- [ ] Task
+    > **Depends:** id:abc12
+    > **Routed by:** id:z0017 **Owner:** someone
+]])
+    check("multi-word key", "a second key after a multi-word key still warns",
+        #w == 2 and has(w, 3, "**Routed by:**") and has(w, 3, "'**Owner:**', which is read as text"),
+        w[1] and w[1].msg or "none")
 
     local done_doc = [[
 - [x] Done task
@@ -446,8 +452,7 @@ do
     > **Routed by:** id:z0017
     > **Completed:** 2026-11-16
 ]]
-    check("multi-word key", "completed task does not warn even with all_warnings",
-        #tmval.validate_warnings(tmscan.lines_of(done_doc), { all_warnings = true }) == 0)
+    check("multi-word key", "completed task does not warn", #warnings_of(done_doc) == 0)
 
     -- --strict CLI flag
     local dir = string.format("/tmp/tm_val_strict_%d_%s", os.time(), tmio.unique_token())
@@ -478,12 +483,18 @@ do
     local fh = assert(io.open(p_harmless, "w"))
     fh:write("# Sprint\n\n- [ ] Task\n    > **Created:** 2026-11-15\n    > **Found by:** someone\n")
     fh:close()
-    p = io.popen("lua src/tmval.lua --all-warnings --strict " .. tmio.shell_quote(p_harmless) .. " 2>&1; echo __CODE__$?")
+    p = io.popen("lua src/tmval.lua --strict " .. tmio.shell_quote(p_harmless) .. " 2>&1; echo __CODE__$?")
     out = p:read("*a")
     p:close()
     code = tonumber(out:match("__CODE__(%d+)%s*$"))
-    check("all-warnings", "--all-warnings surfaces harmless multi-word key and fails under --strict",
+    check("strict", "--strict fails on a multi-word key under a non-lifecycle field",
         code == 1 and out:find("**Found by:**", 1, true) ~= nil, out)
+
+    p = io.popen("lua src/tmval.lua --all-warnings " .. tmio.shell_quote(p_harmless) .. " 2>&1; echo __CODE__$?")
+    out = p:read("*a")
+    p:close()
+    check("strict", "--all-warnings is not an option",
+        out:find("--all-warnings", 1, true) ~= nil and out:find("not found", 1, true) ~= nil, out)
 
     os.execute("rm -rf " .. tmio.shell_quote(dir))
 end

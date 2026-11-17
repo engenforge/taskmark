@@ -215,7 +215,7 @@ files, which can go in the message of the task commit that records the
 remapping.\&
 .PP
 .RE
-\fBvalidate\fR [\-\-fix] [\-\-strict] [\-\-all\-warnings] [file.\&.\&.\&]
+\fBvalidate\fR [\-\-fix] [\-\-strict] [file.\&.\&.\&]
 .RS 4
 Validate taskmark file(s) for SPEC\-TASKMARK\-06 compliance.\& If no \fIfile\fR
 is given, defaults to the configured active file.\& If \fB\-\-fix\fR is given,
@@ -240,9 +240,9 @@ that never change the exit status (unless \fB\-\-strict\fR is given): a
 the registered date format; a second \fBClaimed\fR field on one task;
 a `**Key:**` inside a field'\&s value, which is read as text and is
 usually a second field written on the same line; a continuation line
-starting with a multi\-word `**Key name:**` under \fBDepends\fR,
-\fBClaimed\fR, or \fBCompleted\fR on a pending task (or under any field with
-\fB\-\-all\-warnings\fR); a pending task depending on one still pending in
+starting with a multi\-word `**Key name:**` on a pending task,
+which is read as part of the field above it (beneath \fBDepends\fR, any
+identifier on it becomes a dependency); a pending task depending on one still pending in
 the configured future file, looked up in every task file even when
 only the active file is validated; and an identifier
 carried by two tasks
@@ -308,13 +308,6 @@ continuation line.\&
 \fB\-\-strict\fR
 .RS 4
 With \fBvalidate\fR: exit 1 if any `[WARN]` line is emitted.\&
-.PP
-.RE
-\fB\-\-all\-warnings\fR
-.RS 4
-With \fBvalidate\fR: also warn on multi\-word `**Key name:**`
-continuation lines under non\-lifecycle fields (such as \fBCreated\fR or
-\fBBranch\fR).\&
 .PP
 .RE
 \fB\-\-not\fR \fITAG\fR
