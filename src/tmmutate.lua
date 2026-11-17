@@ -4,7 +4,7 @@
 --
 -- Subcommands:
 --   tm list [--pending|--all] [--claimed|--unclaimed] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]
---   tm tree [--pending|--all] [--ascii] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]
+--   tm tree [--pending|--all] [--ascii] [--why ID] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]
 --   tm next [--claim [--as NAME]] [--not TAG]... [TAG...] [--file FILE] [--tasks-dir DIR]
 --   tm id [--tasks-dir DIR] [file...]
 --   tm done <handle-or-pattern> [--git [REV]] [--file FILE] [--tasks-dir DIR]
@@ -334,7 +334,7 @@ end
 -- Format a top-down dependency forest (blocker -> unblocked) for `file_or_lines`.
 -- Independent chains are separated by blank lines; handles are shown without
 -- brackets. opts: filter ("pending"|"all"), tags, not_tags, ascii, tasks_dir,
--- warned, cfg, dep_statuses. Returns lines array, or nil, reason.
+-- warned, cfg, dep_statuses, dep_locations. Returns lines array, or nil, reason.
 function M.format_tree(file_or_lines, opts)
     opts = opts or {}
     local lines = file_or_lines
@@ -345,11 +345,18 @@ function M.format_tree(file_or_lines, opts)
     local tasks = tmscan.tasks(lines)
     local handles = M.handles(tasks)
 
+    local cfg = opts.cfg
+    local dep_locations = opts.dep_locations
     local dep_statuses = opts.dep_statuses
     if not dep_statuses then
-        if type(file_or_lines) == "string" then
-            local cfg = opts.cfg or tmconfig.resolve({ tasks_dir = opts.tasks_dir })
-            dep_statuses = tmid.statuses(with_file(tmid.task_files(cfg), file_or_lines))
+        if dep_locations then
+            dep_statuses = {}
+            for id, loc in pairs(dep_locations) do dep_statuses[id] = loc.status end
+        elseif type(file_or_lines) == "string" then
+            cfg = cfg or tmconfig.resolve({ tasks_dir = opts.tasks_dir })
+            dep_locations = tmid.locations(with_file(tmid.task_files(cfg), file_or_lines))
+            dep_statuses = {}
+            for id, loc in pairs(dep_locations) do dep_statuses[id] = loc.status end
         else
             dep_statuses = statuses_from_tasks(tasks)
         end
@@ -367,6 +374,7 @@ function M.format_tree(file_or_lines, opts)
 
     local parents, children, claimed = {}, {}, {}
     local self_dep, needs_ext, unknown_deps = {}, {}, {}
+    local future_roots, future_order = {}, {}
     for _, t in ipairs(included) do
         parents[t], children[t], needs_ext[t], unknown_deps[t] = {}, {}, {}, {}
         claimed[t] = claim_of(lines, t)
@@ -386,7 +394,17 @@ function M.format_tree(file_or_lines, opts)
                 else
                     local st = dep_statuses[dep]
                     if st == "pending" then
-                        needs_ext[t][#needs_ext[t] + 1] = tmid.PREFIX .. dep
+                        local loc = dep_locations and dep_locations[dep]
+                        if tmid.in_future(loc, cfg) then
+                            needs_ext[t][#needs_ext[t] + 1] = tmid.PREFIX .. dep .. " [future]"
+                            if not future_roots[dep] then
+                                future_roots[dep] = {}
+                                future_order[#future_order + 1] = dep
+                            end
+                            future_roots[dep][#future_roots[dep] + 1] = t
+                        else
+                            needs_ext[t][#needs_ext[t] + 1] = tmid.PREFIX .. dep
+                        end
                     elseif st == nil then
                         unknown_deps[t][#unknown_deps[t] + 1] = tmid.PREFIX .. dep
                     end
@@ -491,6 +509,103 @@ function M.format_tree(file_or_lines, opts)
             if #out > 0 then out[#out + 1] = "" end
             walk(t, "", true, nil, true)
         end
+    end
+    if #future_order > 0 then
+        if #out > 0 then out[#out + 1] = "" end
+        for _, dep in ipairs(future_order) do
+            local seen_blocked, queue, head, count = {}, {}, 1, 0
+            for _, r in ipairs(future_roots[dep]) do
+                if not seen_blocked[r] then
+                    seen_blocked[r] = true
+                    queue[#queue + 1] = r
+                    count = count + 1
+                end
+            end
+            while head <= #queue do
+                local cur = queue[head]
+                head = head + 1
+                for _, ch in ipairs(children[cur]) do
+                    if not ch.done and not seen_blocked[ch] then
+                        seen_blocked[ch] = true
+                        queue[#queue + 1] = ch
+                        count = count + 1
+                    end
+                end
+            end
+            out[#out + 1] = string.format("%d %s blocked behind %s%s (pending in %s)",
+                count, count == 1 and "task is" or "tasks are", tmid.PREFIX, dep,
+                dep_locations[dep].path:match("([^/]+)$"))
+        end
+    end
+    return out
+end
+
+-- Explain where every dependency of `id_or_handle` in `file_or_lines` comes
+-- from (line number, whether from a continuation line, and target status/file).
+function M.format_why(file_or_lines, id_or_handle, opts)
+    opts = opts or {}
+    local lines = file_or_lines
+    if type(file_or_lines) == "string" then
+        lines = read_file(file_or_lines, opts.warned)
+        if not lines then return nil, "no such file: " .. file_or_lines end
+    end
+    local tasks = tmscan.tasks(lines)
+    local handles = M.handles(tasks)
+    local query = id_or_handle:gsub("^" .. tmid.PREFIX, "")
+    local target
+    for _, t in ipairs(tasks) do
+        local tid = tmid.of(t.summary)
+        if tid == query or handles[t] == id_or_handle then
+            target = t
+            break
+        end
+    end
+    if not target then
+        return nil, "no task matching '" .. id_or_handle .. "'"
+    end
+
+    local dep_locations = opts.dep_locations
+    if not dep_locations then
+        if type(file_or_lines) == "string" then
+            local cfg = opts.cfg or tmconfig.resolve({ tasks_dir = opts.tasks_dir })
+            dep_locations = tmid.locations(with_file(tmid.task_files(cfg), file_or_lines))
+        else
+            dep_locations = {}
+            for _, t in ipairs(tasks) do
+                local tid = tmid.of(t.summary)
+                if tid and (not t.done or not dep_locations[tid]) then
+                    dep_locations[tid] = { status = t.done and "done" or "pending", path = nil, line = t.line }
+                end
+            end
+        end
+    end
+
+    local out = { string.format("[%s] %s", handles[target], target.summary) }
+    local sources = tmid.depend_sources(lines, target)
+    if #sources == 0 then
+        out[#out + 1] = "  (no dependencies)"
+        return out
+    end
+    for _, s in ipairs(sources) do
+        local loc = dep_locations[s.id]
+        local status_desc
+        if not loc then
+            status_desc = "unknown"
+        elseif loc.status == "done" then
+            status_desc = "done"
+        elseif loc.path then
+            local base = loc.path:match("([^/]+)$") or loc.path
+            status_desc = "pending in " .. base
+        else
+            status_desc = "pending"
+        end
+        local where
+        if s.continuation then
+            where = string.format("line %d (continuation of Depends at line %d): %s", s.line, s.start_line, s.text)
+        else
+            where = string.format("line %d: %s", s.line, s.text)
+        end
+        out[#out + 1] = string.format("  depends on %s%s (%s) <- %s", tmid.PREFIX, s.id, status_desc, where)
     end
     return out
 end
@@ -1004,8 +1119,8 @@ end
 local function select_next(lines, file, cfg, opts)
     local tasks = tmscan.tasks(lines)
     local handles = M.handles(tasks)
-    local status = tmid.statuses(with_file(tmid.task_files(cfg), file))
-    local warnings = {}
+    local locs = tmid.locations(with_file(tmid.task_files(cfg), file))
+    local warnings, stalls = {}, {}
     local best
     local claimed_skipped = 0
     for _, t in ipairs(tasks) do
@@ -1015,16 +1130,26 @@ local function select_next(lines, file, cfg, opts)
             else
                 local ready = true
                 for _, dep in ipairs(tmid.depends(lines, t)) do
-                    if status[dep] == nil then
+                    local loc = locs[dep]
+                    if loc == nil then
                         warnings[#warnings + 1] = string.format("[%s] depends on %s%s, which names no task",
                             handles[t], tmid.PREFIX, dep)
+                    elseif tmid.in_future(loc, cfg) then
+                        stalls[#stalls + 1] = string.format(
+                            "[%s] waits on %s%s, which is pending in %s; promote it with tm move or drop the dependency",
+                            handles[t], tmid.PREFIX, dep, loc.path:match("([^/]+)$"))
                     end
-                    if status[dep] ~= "done" then ready = false end
+                    if not (loc and loc.status == "done") then ready = false end
                 end
                 -- "~" sorts after every priority letter; strict < keeps file order.
                 if ready and (not best or (t.priority or "~") < (best.priority or "~")) then best = t end
             end
         end
+    end
+    -- A task deferred to the future file never completes where it is, so
+    -- an empty queue that waits on one is stalled rather than busy: say so.
+    if not best then
+        for _, w in ipairs(stalls) do warnings[#warnings + 1] = w end
     end
     return best, handles, warnings, claimed_skipped
 end
@@ -1072,7 +1197,7 @@ end
 
 local USAGE = {
     list = "Usage: tm list [--pending|--all] [--claimed|--unclaimed] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]   (TAG: +project or @context)",
-    tree = "Usage: tm tree [--pending|--all] [--ascii] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]   (TAG: +project or @context)",
+    tree = "Usage: tm tree [--pending|--all] [--ascii] [--why ID] [--not TAG]... [TAG...] [--tasks-dir DIR] [file...]   (TAG: +project or @context)",
     next = "Usage: tm next [--claim [--as NAME]] [--not TAG]... [TAG...] [--file FILE] [--tasks-dir DIR]   (TAG: +project or @context)",
     id   = "Usage: tm id [--tasks-dir DIR] [file...]",
     done = "Usage: tm done [options] [--] <handle-or-pattern>   (options: --git [REV], --file FILE, --tasks-dir DIR)",
@@ -1168,6 +1293,14 @@ function M.run(subcmd, args)
         elseif a == "--ascii" then
             if subcmd ~= "tree" then tmio.die("--ascii applies only to tm tree\n" .. USAGE[subcmd]) end
             opts.ascii = true
+        elseif a == "--why" then
+            if subcmd ~= "tree" then tmio.die("--why applies only to tm tree\n" .. USAGE[subcmd]) end
+            i = i + 1
+            if not args[i] then tmio.die("--why requires an argument\n" .. USAGE.tree) end
+            opts.why = args[i]
+        elseif a:match("^%-%-why=") then
+            if subcmd ~= "tree" then tmio.die("--why applies only to tm tree\n" .. USAGE[subcmd]) end
+            opts.why = a:sub(7)
         elseif a == "--append" or a == "--replace" then
             if subcmd ~= "payload" then tmio.die(a .. " applies only to tm payload\n" .. USAGE[subcmd]) end
             if opts.mode then tmio.die("give --append or --replace, not both\n" .. USAGE.payload) end
@@ -1262,11 +1395,29 @@ function M.run(subcmd, args)
         local cfg = tmconfig.resolve({ tasks_dir = opts.tasks_dir })
         local files = #positionals > 0 and positionals or { cfg.active_path }
         local warned = #files > 1 and {} or nil
-        local dep_statuses
+        local dep_locations
         if subcmd == "tree" then
             local all = tmid.task_files(cfg)
             for _, f in ipairs(files) do with_file(all, f) end
-            dep_statuses = tmid.statuses(all)
+            dep_locations = tmid.locations(all)
+        end
+        if subcmd == "tree" and opts.why then
+            local out, last_err
+            local search = {}
+            for _, f in ipairs(files) do with_file(search, f) end
+            for _, f in ipairs(tmid.task_files(cfg)) do with_file(search, f) end
+            for _, f in ipairs(search) do
+                local lines_out, err = M.format_why(f, opts.why, { cfg = cfg, dep_locations = dep_locations })
+                if lines_out then
+                    out = lines_out
+                    break
+                else
+                    last_err = err
+                end
+            end
+            if not out then tmio.die("tm tree: " .. (last_err or ("no task matching '" .. opts.why .. "'"))) end
+            for _, line in ipairs(out) do print(line) end
+            os.exit(0)
         end
         for idx, f in ipairs(files) do
             local items, err
@@ -1274,7 +1425,7 @@ function M.run(subcmd, args)
                 items, err = M.format_tree(f, {
                     filter = filter, ascii = opts.ascii,
                     tags = tags, not_tags = not_tags, warned = warned,
-                    cfg = cfg, dep_statuses = dep_statuses,
+                    cfg = cfg, dep_locations = dep_locations,
                 })
             else
                 items, err = M.format_list(f, {

@@ -1787,7 +1787,9 @@ do
     check("tree-cli", "tm tree resolves completed cross-file dep as ready",
         out:find("dddd1 (ready)", 1, true) ~= nil, out)
     check("tree-cli", "tm tree flags pending future cross-file dep",
-        out:find("bbbb1 (needs: id:ffff1)", 1, true) ~= nil, out)
+        out:find("bbbb1 (needs: id:ffff1 [future])", 1, true) ~= nil, out)
+    check("tree-cli", "tm tree prints summary for task blocked behind future dep",
+        out:find("1 task is blocked behind id:ffff1 (pending in future.tm.md)", 1, true) ~= nil, out)
     check("tree-cli", "tm tree links in-file parent to child",
         out:find("rrrr1 (ready)", 1, true) ~= nil
             and out:find("cccc1 +api Child one", 1, true) ~= nil, out)
@@ -1815,6 +1817,110 @@ do
             and out:find("== .tasks/active.tm.md", 1, true) ~= nil
             and out:find("== .tasks/future.tm.md", 1, true) ~= nil
             and out:find("ffff1 (ready) Future blocker id:ffff1", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "tree --why bbbb1")
+    check("tree-cli", "tm tree --why shows direct dep source line",
+        code == 0 and out:find("id:ffff1", 1, true) ~= nil
+            and out:find("pending in future.tm.md", 1, true) ~= nil
+            and out:find("line 9", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "tree --why nonexistent")
+    check("tree-cli", "tm tree --why unknown id exits non-zero", code ~= 0, out)
+
+    -- Transitive stall + continuation-line provenance
+    write(active, [[
+# Active
+
+- [ ] +api Root one id:rrrr1
+
+- [ ] +ui Blocked by future via continuation id:bbbb1
+    > **Depends:** id:rrrr1
+    > **Routed by:** id:ffff1
+
+- [ ] +ui Downstream one id:bbbb2
+    > **Depends:** id:bbbb1
+
+- [ ] +ui Downstream two id:bbbb3
+    > **Depends:** id:bbbb2
+]])
+    out, code = tm_in(tmp, "tree")
+    check("tree-cli", "tm tree summarizes transitive count behind future dep",
+        code == 0 and out:find("3 tasks are blocked behind id:ffff1 (pending in future.tm.md)", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "tree --why id:bbbb1")
+    check("tree-cli", "tm tree --why flags continuation-line dependency provenance",
+        code == 0 and out:find("id:ffff1", 1, true) ~= nil
+            and out:find("continuation of Depends at line 6", 1, true) ~= nil
+            and out:find("line 7", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "tree --why rrrr1")
+    check("tree-cli", "tm tree --why reports (no dependencies) for root task",
+        code == 0 and out:find("(no dependencies)", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "list --why rrrr1")
+    check("tree-cli", "--why refused on list",
+        code ~= 0 and out:find("Usage: tm list", 1, true) ~= nil, out)
+
+    -- Diamond downstream behind future dep + id inside bold key provenance
+    write(active, [[
+# Active
+
+- [ ] Left id:llll1
+    > **Depends:** id:ffff1
+
+- [ ] Right id:rrrr2
+    > **Depends:** id:ffff1
+
+- [ ] Join id:jjjj1
+    > **Depends:** id:llll1, id:rrrr2
+    > **Depends changed (2026-11-15, the check-in id:n177h):** note
+]])
+    out, code = tm_in(tmp, "tree")
+    check("tree-cli", "tm tree counts diamond downstream tasks once in future summary",
+        code == 0 and out:find("3 tasks are blocked behind id:ffff1 (pending in future.tm.md)", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "tree --why jjjj1")
+    check("tree-cli", "tm tree --why shows id inside bold continuation key",
+        code == 0 and out:find("id:n177h (unknown) <- line 11 (continuation of Depends at line 10)", 1, true) ~= nil, out)
+
+    -- A completed dependant is not blocked: --all must not count it
+    write(active, [[
+# Active
+
+- [ ] Blocked id:bbbb1
+    > **Depends:** id:ffff1
+
+- [ ] Pending child id:bbbb2
+    > **Depends:** id:bbbb1
+
+- [x] Done child id:bbbb3
+    > **Depends:** id:bbbb1
+    > **Completed:** 2026-11-15
+]])
+    out, code = tm_in(tmp, "tree --all")
+    check("tree-cli", "tm tree --all does not count completed dependants as blocked",
+        code == 0 and out:find("2 tasks are blocked behind id:ffff1", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "next")
+    check("tree-cli", "tm next names the future.tm.md task stalling the queue",
+        code == 0 and out:find("no task is ready", 1, true) ~= nil
+            and out:find("id:ffff1", 1, true) ~= nil
+            and out:find("future.tm.md", 1, true) ~= nil, out)
+
+    out, code = tm_in(tmp, "tree --why ffff1")
+    check("tree-cli", "tm tree --why finds a task in another task file",
+        code == 0 and out:find("Future blocker id:ffff1", 1, true) ~= nil
+            and out:find("(no dependencies)", 1, true) ~= nil, out)
+
+    -- A configured future_file is recognised by name, not a hardcoded one
+    os.execute("mv " .. tmio.shell_quote(future) .. " " .. tmio.shell_quote(tmp .. "/.tasks/later.tm.md"))
+    write(tmp .. "/.taskmarkrc", "future_file: later.tm.md\n")
+    out, code = tm_in(tmp, "tree")
+    check("tree-cli", "tm tree honours a configured future_file",
+        code == 0 and out:find("(needs: id:ffff1 [future])", 1, true) ~= nil
+            and out:find("blocked behind id:ffff1 (pending in later.tm.md)", 1, true) ~= nil, out)
+    os.remove(tmp .. "/.taskmarkrc")
+    os.execute("mv " .. tmio.shell_quote(tmp .. "/.tasks/later.tm.md") .. " " .. tmio.shell_quote(future))
 
     cleanup_dir(tmp)
 end

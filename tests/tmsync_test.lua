@@ -293,5 +293,15 @@ do
     os.execute("rm -rf " .. dir)
 end
 
+do
+    local dir = repo_with_tasks("tmsync_warn")
+    write_file(dir .. "/.tasks/active.tm.md",
+        "# Current Sprint\n\n- [ ] Task\n    > **Depends:** id:abc12\n    > **Routed by:** id:z0017\n")
+    local out, code = run_cmd(string.format("cd %s && %s sync -m warned", dir, abs_tm))
+    check("warnings", "tm sync prints validation warnings on task files",
+        code == 0 and out:find("[WARN]", 1, true) ~= nil and out:find("Routed by", 1, true) ~= nil, out)
+    os.execute("rm -rf " .. dir)
+end
+
 print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))
 os.exit(failed > 0 and 1 or 0)

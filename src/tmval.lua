@@ -25,6 +25,8 @@ Usage:
 
 Options:
   --fix                   Automatically repair common formatting errors
+  --strict                Exit 1 if any warnings are emitted
+  --all-warnings          Also warn on multi-word keys under non-lifecycle fields
   -h, --help              Show this help message
 
 Exit codes:
@@ -229,7 +231,11 @@ local function validate_body(lines, errors)
                         prev_was_label = true
                         in_list_item = false
                     else
-                        add(i, "V10", "payload line beginning with '>' does not match the labeled-field grammar")
+                        local msg = "payload line beginning with '>' does not match the labeled-field grammar"
+                        if fields.content:match("^> %*%*[^%*]+:%*%*") then
+                            msg = msg .. " (field keys must be a single word with no spaces)"
+                        end
+                        add(i, "V10", msg)
                         prev_was_label = false
                         in_list_item = false
                     end
@@ -334,29 +340,34 @@ local function date_field_problem(key, value)
     return nil
 end
 
+local LIFECYCLE_FIELDS = { Depends = true, Claimed = true, Completed = true }
+
 -- Non-fatal findings in labeled fields (§1.5 permits warnings; none fails
 -- a document): a registered date field whose value is not the registered
--- format, and a `**Key:**` inside a value, which is nearly always a second
--- field written on the same line and therefore read as text. Fenced and
--- freeform payload content, and code spans, are never inspected. Returns { line, msg }.
-local function validate_warnings(lines)
+-- format, a `**Key:**` inside a value, and a continuation line starting
+-- with a multi-word `**Key name:**` (scoped to lifecycle fields on pending
+-- tasks unless `opts.all_warnings` is set). Fenced and freeform payload
+-- content, and code spans, are never inspected. Returns { line, msg }.
+local function validate_warnings(lines, opts)
+    opts = opts or {}
     local warnings = {}
-    local in_field = false
+    local in_field, active_key = false, nil
     local cur_task, seen_claimed = nil, false
     for i, kind, fields, _, task, fence_open in tmscan.iter(lines) do
         if task ~= cur_task then
             cur_task, seen_claimed = task, false
         end
         local value
+        local skip_second = false
         -- A completed task is a record (§4.3.3): only the Completed stamp a
         -- tool just wrote is checked, so old text does not bury new warnings.
         local record = task and task.done
         if kind == "payload" and not fence_open then
             local key, first = fields.content:match("^> %*%*([A-Za-z][A-Za-z0-9_%-]*):%*%* ?(.*)$")
             if key and record and key ~= "Completed" then
-                in_field = false
+                in_field, active_key = false, nil
             elseif key then
-                value, in_field = first, not record
+                value, in_field, active_key = first, not record, key
                 if key == "Claimed" then
                     if seen_claimed then
                         warnings[#warnings + 1] = { line = i,
@@ -369,14 +380,24 @@ local function validate_warnings(lines)
                 if problem then warnings[#warnings + 1] = { line = i, msg = problem } end
             elseif in_field and fields.content:match("^> ") then
                 value = fields.content:sub(3)
+                local bad_key = value:match("^(%*%*[A-Za-z][^%*]*:%*%*)")
+                if bad_key then
+                    skip_second = true
+                    if opts.all_warnings or LIFECYCLE_FIELDS[active_key] then
+                        warnings[#warnings + 1] = { line = i,
+                            msg = string.format(
+                                "continuation line starts with '%s', which is not a valid single-word field key and is read as part of '%s': move it above '%s' or make it a payload bullet",
+                                bad_key, active_key, active_key) }
+                    end
+                end
             else
-                in_field = false
+                in_field, active_key = false, nil
             end
         else
-            in_field = false
+            in_field, active_key = false, nil
         end
         -- A key quoted in a code span is being talked about, not written.
-        local second = value and value:gsub("`[^`]*`", ""):match("%*%*[A-Za-z][A-Za-z0-9_%-]*:%*%*")
+        local second = not skip_second and value and value:gsub("`[^`]*`", ""):match("%*%*[A-Za-z][A-Za-z0-9_%-]*:%*%*")
         if second then
             warnings[#warnings + 1] = { line = i, msg = "value contains '" .. second ..
                 "', which is read as text, not as a field: write one field per line" }
@@ -582,12 +603,18 @@ local function run(args)
 
     local files = {}
     local fix_mode = false
+    local strict_mode = false
+    local all_warnings = false
     local end_of_options = false
     for _, a in ipairs(args) do
         if not end_of_options and (a == "-h" or a == "--help") then
             show_help()
         elseif not end_of_options and a == "--fix" then
             fix_mode = true
+        elseif not end_of_options and a == "--strict" then
+            strict_mode = true
+        elseif not end_of_options and a == "--all-warnings" then
+            all_warnings = true
         elseif not end_of_options and a == "--" then
             end_of_options = true
         else
@@ -607,7 +634,9 @@ local function run(args)
     local TERM_GREEN  = color and "\27[32m" or ""
     local TERM_YELLOW = color and "\27[33m" or ""
 
+    local total_warnings = 0
     local function warn(file, line, msg)
+        total_warnings = total_warnings + 1
         local where = (#files > 1 and file and (file .. ": ") or "") .. (line and ("Line " .. line .. ": ") or "")
         print(string.format("%s[WARN]%s %s%s", TERM_YELLOW, TERM_RESET, where, msg))
     end
@@ -630,7 +659,7 @@ local function run(args)
 
             local lines = tmscan.lines_of(raw_content)
             local errors = validate_lines(lines)
-            for _, w in ipairs(validate_warnings(lines)) do warn(file, w.line, w.msg) end
+            for _, w in ipairs(validate_warnings(lines, { all_warnings = all_warnings })) do warn(file, w.line, w.msg) end
 
             if #errors == 0 then
                 print(string.format("%s[PASS]%s %s conforms to SPEC-TASKMARK-06.", TERM_GREEN, TERM_RESET, file))
@@ -683,10 +712,45 @@ local function run(args)
         warn(nil, nil, tmid.describe_duplicate(d))
     end
 
+    -- Dependency stalls: a pending task outside the future file that waits
+    -- on a task still pending in it is never offered by `tm next` until that
+    -- task is promoted. Targets are looked up in every configured task file,
+    -- so the default run (active file only) still sees the future file.
+    do
+        local cfg = tmconfig.resolve({})
+        local paths = tmid.task_files(cfg)
+        for _, f in ipairs(files) do paths[#paths + 1] = f end
+        local locs = tmid.locations(paths)
+        for _, file in ipairs(files) do
+            local content
+            if not tmid.in_future({ status = "pending", path = file }, cfg) then
+                content = tmid.read_texts({ file })[1]
+            end
+            if content and content:find(tmid.PREFIX, 1, true) then
+                local lines = tmscan.lines_of(content)
+                for _, task in ipairs(tmscan.tasks(lines)) do
+                    if not task.done then
+                        for _, src in ipairs(tmid.depend_sources(lines, task)) do
+                            local loc = locs[src.id]
+                            if tmid.in_future(loc, cfg) then
+                                warn(file, src.line, string.format(
+                                    "depends on %s%s, which is pending in %s; tm next will not offer this task until it is promoted",
+                                    tmid.PREFIX, src.id, loc.path))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
     if total_errors > 0 then
         print(string.format("%sValidation failed with %d error(s).%s", TERM_RED, total_errors, TERM_RESET))
         os.exit(1)
     elseif had_file_error then
+        os.exit(1)
+    elseif strict_mode and total_warnings > 0 then
+        print(string.format("%sValidation failed with %d warning(s) (--strict).%s", TERM_RED, total_warnings, TERM_RESET))
         os.exit(1)
     end
 

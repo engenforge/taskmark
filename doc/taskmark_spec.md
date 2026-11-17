@@ -239,6 +239,15 @@ Within a payload the leading `>` is reserved for exactly one purpose: a structur
 * **Placement is free; one leading run is the canonical form.** A field is recognized anywhere in a payload. Like every other rule in this format, the classification comes from the line's own leading characters (§4.1), so a field that follows freeform content is fully conforming and a validator MUST NOT reject one for its position. Fields SHOULD nevertheless be written as a single contiguous run immediately beneath the task line, and a tool that adds a field — a `Completed` stamp on completion (§5.2), say — SHOULD insert it into that run rather than appending it below the freeform content. The reason is consistency across authoring tools rather than parsing: one habitual place to look keeps a task's metadata visible without reading its whole payload, and keeps a stamped field to a one-line diff. For the same reason, a tool that *reads* a field MUST search the whole payload and MUST NOT assume the canonical arrangement.
 
 * **One field per line.** A value runs to the end of its line (and through any continuation lines), so a second `**Key:**` on the same line is text inside the first field's value, not a field. `> **Created:** 2026-11-07. **Branch:** testinfra` is a single `Created` field whose value is not a date; `Branch` is not a field at all. Write each field on a line of its own.
+* **Single-word keys only.** Because a field key matches `[A-Za-z][A-Za-z0-9_-]*` with no spaces, a multi-word heading such as `> **Routed by:** id:z0017` or `> **Depends note:** ...` is not a labeled field. Standalone, it fails Rule V10; placed directly beneath another labeled field, it is parsed as a continuation line of the field above it. Directly beneath `Depends`, any `id:` on that line (even inside the bold text itself) becomes a real dependency:
+
+  ```markdown
+  - [ ] (A) Update type checker id:z0089
+      > **Depends:** id:z0012
+      > **Routed by:** id:z0085 (deferred to future)
+  ```
+
+  Here `id:z0085` is read as part of `Depends`, blocking `id:z0089` on a deferred task. To avoid this, move the note above `Depends` (or under a single-word key), or write it as a payload bullet after a blank line.
 
 Registered keys:
 

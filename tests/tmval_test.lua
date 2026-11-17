@@ -316,5 +316,186 @@ do
     os.execute("rm -rf " .. tmio.shell_quote(dir))
 end
 
+-- ── Cross-file future.tm.md stall warnings ──────────────────────────────────
+
+do
+    local dir = string.format("/tmp/tm_val_future_%d_%s", os.time(), tmio.unique_token())
+    tmio.mkdir_p(dir)
+    local active_path = dir .. "/active.tm.md"
+    local future_path = dir .. "/future.tm.md"
+
+    local f1 = assert(io.open(active_path, "w"))
+    f1:write("# Active\n\n- [ ] Active task id:aaaa1\n    > **Depends:** id:ffff1\n\n- [ ] Active unblocked id:aaaa2\n    > **Depends:** id:ffff2\n")
+    f1:close()
+
+    local f2 = assert(io.open(future_path, "w"))
+    f2:write("# Future\n\n- [ ] Deferred blocker id:ffff1\n\n- [x] Done in future id:ffff2\n    > **Completed:** 2026-11-15\n")
+    f2:close()
+
+    local p = io.popen("lua src/tmval.lua " .. tmio.shell_quote(active_path) .. " " .. tmio.shell_quote(future_path) .. " 2>&1; echo __CODE__$?")
+    local out = p:read("*a")
+    p:close()
+    local code = tonumber(out:match("__CODE__(%d+)%s*$"))
+    check("cross-file future", "warns when active task depends on pending future.tm.md task",
+        code == 0 and out:find("[WARN]", 1, true) ~= nil
+            and out:find("id:ffff1", 1, true) ~= nil
+            and out:find("future.tm.md", 1, true) ~= nil, out)
+    check("cross-file future", "does not warn when future.tm.md task is completed",
+        out:find("id:ffff2", 1, true) == nil, out)
+
+    p = io.popen("lua src/tmval.lua --strict " .. tmio.shell_quote(active_path) .. " " .. tmio.shell_quote(future_path) .. " 2>&1; echo __CODE__$?")
+    out = p:read("*a")
+    p:close()
+    code = tonumber(out:match("__CODE__(%d+)%s*$"))
+    check("cross-file future", "--strict fails on cross-file future.tm.md warning",
+        code == 1 and out:find("id:ffff1", 1, true) ~= nil, out)
+
+    os.execute("rm -rf " .. tmio.shell_quote(dir))
+end
+
+-- The default `tm validate` (no file arguments) checks the active file, and
+-- must still see a stall on a task deferred to the configured future file.
+do
+    local dir = string.format("/tmp/tm_val_future_default_%d_%s", os.time(), tmio.unique_token())
+    tmio.mkdir_p(dir .. "/.tasks")
+    local function put(path, text)
+        local f = assert(io.open(path, "w")); f:write(text); f:close()
+    end
+    put(dir .. "/.tasks/active.tm.md", "# Active\n\n- [ ] Active task id:aaaa1\n    > **Depends:** id:ffff1\n")
+    put(dir .. "/.tasks/future.tm.md", "# Future\n\n- [ ] Deferred blocker id:ffff1\n")
+    local val = tmio.shell_quote(os.getenv("PWD") .. "/src/tmval.lua")
+    local function run_in()
+        local p = io.popen("cd " .. tmio.shell_quote(dir) .. " && lua " .. val .. " 2>&1; echo __CODE__$?")
+        local out = p:read("*a"); p:close()
+        return out, tonumber(out:match("__CODE__(%d+)%s*$"))
+    end
+    local out, code = run_in()
+    check("cross-file future", "default validate warns on a dependency deferred to future.tm.md",
+        code == 0 and out:find("id:ffff1", 1, true) ~= nil and out:find("future.tm.md", 1, true) ~= nil, out)
+
+    os.execute("mv " .. tmio.shell_quote(dir .. "/.tasks/future.tm.md") .. " " .. tmio.shell_quote(dir .. "/.tasks/later.tm.md"))
+    put(dir .. "/.taskmarkrc", "future_file: later.tm.md\n")
+    out, code = run_in()
+    check("cross-file future", "honours a configured future_file",
+        code == 0 and out:find("id:ffff1, which is pending in", 1, true) ~= nil
+            and out:find("later.tm.md", 1, true) ~= nil, out)
+    os.execute("rm -rf " .. tmio.shell_quote(dir))
+end
+
+-- ── Multi-word **Key:** continuation warnings (scoped) & --strict ───────────
+
+do
+    local w = warnings_of([[
+- [ ] Task
+    > **Depends:** id:abc12
+    > **Routed by:** id:z0017
+]])
+    check("multi-word key", "warns under Depends on pending task",
+        #w == 1 and has(w, 3, "**Routed by:**") and has(w, 3, "Depends")
+            and (has(w, 3, "above") or has(w, 3, "bullet")), w[1] and w[1].msg or "none")
+
+    w = warnings_of([[
+- [ ] Task
+    > **Depends:** id:abc12
+    > **Depends changed (2026-11-15, the check-in id:n177h):** old dep
+]])
+    check("multi-word key", "warns when id: sits inside bold key under Depends",
+        #w == 1 and has(w, 3, "Depends changed"), w[1] and w[1].msg or "none")
+
+    w = warnings_of([[
+- [ ] Task
+    > **Claimed:** 2026-11-16 s1
+    > **Routed by:** s2
+]])
+    check("multi-word key", "warns under Claimed on pending task",
+        #w == 1 and has(w, 3, "Claimed"), w[1] and w[1].msg or "none")
+
+    w = warnings_of([[
+- [ ] Task
+    > **Completed:** 2026-11-16
+    > **Routed by:** s2
+]])
+    check("multi-word key", "warns under Completed on pending task",
+        #w == 1 and has(w, 3, "Completed"), w[1] and w[1].msg or "none")
+
+    w = warnings_of([[
+- [ ] Task
+    > **Depends:** id:a,
+    > id:b
+]])
+    check("multi-word key", "legitimate wrapped Depends line does not warn", #w == 0, w[1] and w[1].msg)
+
+    local harmless = [[
+- [ ] Task
+    > **Created:** 2026-11-15
+    > **Found by:** someone
+    > **Branch:** main
+    > **Split from:** id:x1234
+]]
+    w = warnings_of(harmless)
+    check("multi-word key", "harmless fields (Created/Branch) are quiet by default", #w == 0, w[1] and w[1].msg)
+
+    local w_all = tmval.validate_warnings(tmscan.lines_of(harmless), { all_warnings = true })
+    check("multi-word key", "harmless fields warn under all_warnings",
+        #w_all == 2 and has(w_all, 3, "**Found by:**") and has(w_all, 5, "**Split from:**"),
+        w_all[1] and w_all[1].msg or "none")
+
+    local done_doc = [[
+- [x] Done task
+    > **Depends:** id:abc12
+    > **Routed by:** id:z0017
+    > **Completed:** 2026-11-16
+]]
+    check("multi-word key", "completed task does not warn even with all_warnings",
+        #tmval.validate_warnings(tmscan.lines_of(done_doc), { all_warnings = true }) == 0)
+
+    -- --strict CLI flag
+    local dir = string.format("/tmp/tm_val_strict_%d_%s", os.time(), tmio.unique_token())
+    tmio.mkdir_p(dir)
+    local p_warn = dir .. "/warn.tm.md"
+    local f = assert(io.open(p_warn, "w"))
+    f:write("# Sprint\n\n- [ ] Task\n    > **Depends:** id:abc12\n    > **Routed by:** id:z0017\n")
+    f:close()
+
+    local p = io.popen("lua src/tmval.lua --strict " .. tmio.shell_quote(p_warn) .. " 2>&1; echo __CODE__$?")
+    local out = p:read("*a")
+    p:close()
+    local code = tonumber(out:match("__CODE__(%d+)%s*$"))
+    check("strict", "--strict exits 1 when warnings are present",
+        code == 1 and out:find("[WARN]", 1, true) ~= nil, out)
+
+    local p_clean = dir .. "/clean.tm.md"
+    local fc = assert(io.open(p_clean, "w"))
+    fc:write("# Sprint\n\n- [ ] Clean task\n    > **Depends:** id:abc12\n")
+    fc:close()
+    p = io.popen("lua src/tmval.lua --strict " .. tmio.shell_quote(p_clean) .. " 2>&1; echo __CODE__$?")
+    out = p:read("*a")
+    p:close()
+    code = tonumber(out:match("__CODE__(%d+)%s*$"))
+    check("strict", "--strict exits 0 when no warnings are present", code == 0, out)
+
+    local p_harmless = dir .. "/harmless.tm.md"
+    local fh = assert(io.open(p_harmless, "w"))
+    fh:write("# Sprint\n\n- [ ] Task\n    > **Created:** 2026-11-15\n    > **Found by:** someone\n")
+    fh:close()
+    p = io.popen("lua src/tmval.lua --all-warnings --strict " .. tmio.shell_quote(p_harmless) .. " 2>&1; echo __CODE__$?")
+    out = p:read("*a")
+    p:close()
+    code = tonumber(out:match("__CODE__(%d+)%s*$"))
+    check("all-warnings", "--all-warnings surfaces harmless multi-word key and fails under --strict",
+        code == 1 and out:find("**Found by:**", 1, true) ~= nil, out)
+
+    os.execute("rm -rf " .. tmio.shell_quote(dir))
+end
+
+-- ── V10: standalone multi-word **Key:** hint ───────────────────────────────
+
+do
+    local errs = tmval.validate_lines(tmscan.lines_of("- [ ] Task\n    > **Routed by:** id:z0017\n"))
+    check("V10", "standalone multi-word key gives single-word hint",
+        #errs == 1 and errs[1].rule == "V10" and errs[1].msg:find("single word", 1, true) ~= nil,
+        errs[1] and errs[1].msg or "none")
+end
+
 print(string.format("Results: %d passed, %d failed, %d total", passed, failed, passed + failed))
 os.exit(failed > 0 and 1 or 0)

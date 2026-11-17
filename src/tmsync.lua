@@ -9,6 +9,8 @@ package.path = script_dir .. "/?.lua;" .. package.path
 local tmconfig = require("tmconfig")
 local tmio = require("tmio")
 local tmgit = require("tmgit")
+local tmscan = require("tmscan")
+local tmval = require("tmval")
 
 local USAGE = [=[
 tm sync — commit taskmark changes to the orphan branch
@@ -80,6 +82,18 @@ local function M_run(args)
     end
     local branch = tmgit.branch(dir)
     if not branch then die("tasks directory '" .. dir .. "' is on a detached HEAD; check out a branch first") end
+
+    for _, path in ipairs({ cfg.active_path, cfg.future_path, cfg.completed_path }) do
+        local f = io.open(path, "r")
+        if f then
+            local content = f:read("*a")
+            f:close()
+            local base = path:match("([^/]+)$") or path
+            for _, w in ipairs(tmval.validate_warnings(tmscan.lines_of(content))) do
+                print(string.format("[WARN] %s: Line %d: %s", base, w.line, w.msg))
+            end
+        end
+    end
 
     -- The lock covers only staging, so the snapshot never interleaves with
     -- another tm write. It is released before `git commit`, because hooks

@@ -50,7 +50,7 @@ the current working directory (the layout described by the spec).
 	nothing on standard output and a short note on standard error. A
 	missing file is an error.
 
-*tree* [--pending|--all] [--ascii] [--not _TAG_]... [_TAG_...] [--tasks-dir _DIR_] [_file_...]
+*tree* [--pending|--all] [--ascii] [--why _ID_] [--not _TAG_]... [_TAG_...] [--tasks-dir _DIR_] [_file_...]
 	Display a top-down dependency forest (blocker to unblocked) for the
 	active task document or the given files, showing handles without
 	brackets. Each root is an independent chain of work. Ready tasks are
@@ -58,7 +58,12 @@ the current working directory (the layout described by the spec).
 	(with *--all*) `[x]`. Diamond dependencies expand once and
 	show `(also needs: ...)` on the first branch and `(see above)` on later
 	ones; blockers outside the displayed set (in other files or excluded
-	by filters) or unknown identifiers are noted inline. Accepts the same
+	by filters) or unknown identifiers are noted inline, with pending
+	blockers in _future.tm.md_ tagged `[future]` and summarized at the
+	bottom by how many pending tasks are transitively blocked behind them.
+	With *--why*, print the provenance (line number and whether from a
+	continuation line) of each dependency of _ID_, which is looked up in
+	the given files and then in every task file. Accepts the same
 	tag filters and file arguments as *list*.
 
 *next* [--claim [--as _NAME_]] [--not _TAG_]... [_TAG_...] [--file _FILE_] [--tasks-dir _DIR_]
@@ -71,7 +76,9 @@ the current working directory (the layout described by the spec).
 	on standard error. With *--claim*, selects and stamps `Claimed` in one
 	step under `.tm.lock`. When no task is ready, prints nothing on standard
 	output, a note on standard error (naming how many are claimed when any
-	were passed over), and exits 0.
+	were passed over, and each task waiting on one still pending in
+	_future.tm.md_, which cannot complete until it is promoted), and
+	exits 0.
 
 *add* _<task-text>_ [-p|--priority _PRI_] [--section _SECTION_ | --before _TASK_ | --after _TASK_] [--file _FILE_] [--tasks-dir _DIR_]
 	Add a pending task at the end of the named section's own content
@@ -169,7 +176,7 @@ the current working directory (the layout described by the spec).
 	files, which can go in the message of the task commit that records the
 	remapping.
 
-*validate* [--fix] [file...]
+*validate* [--fix] [--strict] [--all-warnings] [file...]
 	Validate taskmark file(s) for SPEC-TASKMARK-06 compliance. If no _file_
 	is given, defaults to the configured active file. If *--fix* is given,
 	automatically repairs common formatting errors (over-indented bullet
@@ -188,11 +195,17 @@ the current working directory (the layout described by the spec).
 	failure or file error.
 
 	Beyond the rules of the specification, prints non-fatal `[WARN]` lines
-	that never change the exit status: a *Created*, *Due*, *Completed*, or
-	*Claimed* field whose value is not the registered date format; a second
-	*Claimed* field on one task; a `\*\*Key:\*\*`
-	inside a field's value, which is read as text and is usually a second
-	field written on the same line; and an identifier carried by two tasks
+	that never change the exit status (unless *--strict* is given): a
+	*Created*, *Due*, *Completed*, or *Claimed* field whose value is not
+	the registered date format; a second *Claimed* field on one task;
+	a `\*\*Key:\*\*` inside a field's value, which is read as text and is
+	usually a second field written on the same line; a continuation line
+	starting with a multi-word `\*\*Key name:\*\*` under *Depends*,
+	*Claimed*, or *Completed* on a pending task (or under any field with
+	*--all-warnings*); a pending task depending on one still pending in
+	the configured future file, looked up in every task file even when
+	only the active file is validated; and an identifier
+	carried by two tasks
 	among the files given. In a completed task only the *Completed* field
 	is checked: the rest of its text is a record. Duplicate identifiers are
 	looked for only among the files given; *id* checks every task file. Output is coloured only when standard output is
@@ -229,6 +242,19 @@ the current working directory (the layout described by the spec).
 *--ascii*
 	With *tree*: use ASCII connectors (`|-- `, \``-- \`, `|   `) instead
 	of Unicode box-drawing characters.
+
+*--why* _ID_
+	With *tree*: show where each dependency of _ID_ (identifier or handle)
+	was read from, including line number and whether it came from a
+	continuation line.
+
+*--strict*
+	With *validate*: exit 1 if any `[WARN]` line is emitted.
+
+*--all-warnings*
+	With *validate*: also warn on multi-word `\*\*Key name:\*\*`
+	continuation lines under non-lifecycle fields (such as *Created* or
+	*Branch*).
 
 *--not* _TAG_
 	With *list*, *tree*, and *next*: leave out tasks whose line carries

@@ -169,20 +169,44 @@ function M.describe_duplicate(d)
     return string.format("%s%s is carried by %d tasks: %s", M.PREFIX, d.id, #d.places, table.concat(places, ", "))
 end
 
--- Status ("pending" or "done") of every identified task across `paths`,
--- reading each file once. A pending copy wins over a completed one, so a
--- duplicated identifier never unblocks a dependant.
-function M.statuses(paths)
+-- Status ("pending" or "done") and source location of every identified task
+-- across `paths`, reading each file once. A pending copy wins over a
+-- completed one, so a duplicated identifier never unblocks a dependant.
+function M.locations(paths)
     local out = {}
     for _, path in ipairs(paths) do
         local content = read(path)
         if content and content:find(M.PREFIX, 1, true) then
             for _, t in ipairs(identified_tasks(content)) do
                 if not t.done or out[t.id] == nil then
-                    out[t.id] = t.done and "done" or "pending"
+                    out[t.id] = {
+                        status = t.done and "done" or "pending",
+                        path = path,
+                        line = t.line,
+                    }
                 end
             end
         end
+    end
+    return out
+end
+
+-- Whether a locations() entry is a pending task in the future file of the
+-- resolved configuration `cfg` (default name when nil). Matched by file
+-- name, so a path spelled differently on the command line still counts.
+function M.in_future(loc, cfg)
+    if not (loc and loc.status == "pending" and loc.path) then return false end
+    local name = (cfg and cfg.future_file or "future.tm.md"):match("([^/]+)$")
+    return loc.path:match("([^/]+)$") == name
+end
+
+-- Status ("pending" or "done") of every identified task across `paths`,
+-- reading each file once. A pending copy wins over a completed one, so a
+-- duplicated identifier never unblocks a dependant.
+function M.statuses(paths)
+    local out = {}
+    for id, loc in pairs(M.locations(paths)) do
+        out[id] = loc.status
     end
     return out
 end
@@ -259,6 +283,34 @@ function M.depends(lines, task)
     local out = {}
     for _, f in ipairs(M.fields(lines, task, "Depends")) do
         for _, id in ipairs(M.refs(f.value)) do out[#out + 1] = id end
+    end
+    return out
+end
+
+-- Provenance of every identifier cited by a task's `Depends` fields:
+-- { id, line, start_line, continuation, text }.
+function M.depend_sources(lines, task)
+    local out = {}
+    for _, f in ipairs(M.fields(lines, task, "Depends")) do
+        for i = f.start_line, f.end_line do
+            local _, fields = tmscan.classify(lines[i])
+            local content = fields.content or ""
+            local text
+            if i == f.start_line then
+                text = content:match("^> %*%*[A-Za-z][A-Za-z0-9_%-]*:%*%* ?(.*)$") or ""
+            else
+                text = content:sub(3)
+            end
+            for _, id in ipairs(M.refs(text)) do
+                out[#out + 1] = {
+                    id = id,
+                    line = i,
+                    start_line = f.start_line,
+                    continuation = i > f.start_line,
+                    text = content,
+                }
+            end
+        end
     end
     return out
 end
