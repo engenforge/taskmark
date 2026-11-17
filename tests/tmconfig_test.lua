@@ -108,6 +108,7 @@ do
     check("resolve", "no file, no overrides: future_path derived", cfg.future_path == ".tasks/future.tm.md")
     check("resolve", "no file, no overrides: completed_path derived", cfg.completed_path == ".tasks/completed.tm.md")
     check("resolve", "no file, no overrides: archive_dir default", cfg.archive_dir == "archive")
+    check("resolve", "no file, no overrides: archive_max_bytes default", cfg.archive_max_bytes == "0")
 end
 
 do
@@ -119,6 +120,7 @@ active_file: now.tm.md
 future_file: later.tm.md
 completed_file: done.tm.md
 archive_dir: history
+archive_max_bytes: 524288
 ]])
 
     local cfg = tmconfig.resolve({ config_path = path, global_config_path = NO_GLOBAL })
@@ -127,6 +129,7 @@ archive_dir: history
     check("resolve", "file config: future_path", cfg.future_path == "tracking/later.tm.md")
     check("resolve", "file config: completed_path", cfg.completed_path == "tracking/done.tm.md")
     check("resolve", "file config: archive_dir", cfg.archive_dir == "history")
+    check("resolve", "file config: archive_max_bytes", cfg.archive_max_bytes == "524288")
 
     -- Explicit overrides win over the file, per key.
     local cfg2 = tmconfig.resolve({ config_path = path, global_config_path = NO_GLOBAL, tasks_dir = "elsewhere" })
@@ -235,28 +238,44 @@ archive_dir: history
 - [x] Finished thing
     > **Completed:** 2026-08-01
 ]])
-    out, code = run_cmd(string.format("cd %s && lua %s sweep --sprint 2026-S2", dir, tm))
+    out, code = run_cmd(string.format("cd %s && lua %s sweep", dir, tm))
     check("e2e", "tm sweep with no positional args resolves configured paths: exit 0", code == 0)
     check("e2e", "tm sweep moved the task into the configured completed file",
           (read_file(dir .. "/tracking/done.tm.md") or ""):match("Finished thing") ~= nil)
 
-    -- Age the swept section out and confirm archive lands under the
+    -- Age the swept task out and confirm archive lands under the
     -- configured archive_dir name.
-    -- Two recent filler sections plus OLD: OLD must be neither among the 2
-    -- newest nor within the 14-day window to actually age out (a lone
-    -- section is always "among the 2 newest" and would never move).
     local completed_body = "# Completed Archive\n\n"
     for n = 2, 1, -1 do
         completed_body = completed_body ..
-            string.format("## R%d\n- [x] t\n    > **Completed:** 2026-08-2%d\n\n", n, n % 10)
+            string.format("- [x] r%d\n    > **Completed:** 2026-08-2%d\n\n", n, n % 10)
     end
-    completed_body = completed_body .. "## OLD\n- [x] old thing\n    > **Completed:** 2026-01-01\n"
+    completed_body = completed_body .. "- [x] old thing\n    > **Completed:** 2026-01-01\n"
     write_file(dir .. "/tracking/done.tm.md", completed_body)
 
     out, code = run_cmd(string.format("cd %s && lua %s archive", dir, tm))
     check("e2e", "tm archive with no flags/args resolves configured paths: exit 0", code == 0)
     check("e2e", "tm archive uses the configured archive_dir name",
           read_file(dir .. "/tracking/history/2026/2026-01.tm.md") ~= nil)
+
+    -- archive_max_bytes in .taskmarkrc is honored by tm archive, and --max-bytes overrides it.
+    local today = os.date("!%Y-%m-%d")
+    write_file(dir .. "/.taskmarkrc", "tasks_dir: tracking\ncompleted_file: done.tm.md\narchive_dir: history\narchive_max_bytes: 80\n")
+    write_file(dir .. "/tracking/done.tm.md", "# Completed Archive\n\n"
+        .. string.format("- [x] newest\n    > **Completed:** %s\n\n", today)
+        .. string.format("- [x] older\n    > **Completed:** %s\n", today))
+    out, code = run_cmd(string.format("cd %s && lua %s archive", dir, tm))
+    check("e2e", "tm archive honors archive_max_bytes from .taskmarkrc",
+          code == 0 and not (read_file(dir .. "/tracking/done.tm.md") or ""):match("older"))
+
+    -- Invalid archive_max_bytes in .taskmarkrc fails tm archive, but does not break tm sweep.
+    write_file(dir .. "/.taskmarkrc", "tasks_dir: tracking\nactive_file: now.tm.md\ncompleted_file: done.tm.md\narchive_max_bytes: 512k\n")
+    write_file(dir .. "/tracking/now.tm.md", "# Current Sprint\n\n- [x] Sweepable\n    > **Completed:** 2026-08-01\n")
+    out, code = run_cmd(string.format("cd %s && lua %s sweep", dir, tm))
+    check("e2e", "invalid archive_max_bytes in .taskmarkrc does not break tm sweep", code == 0, out)
+    out, code = run_cmd(string.format("cd %s && lua %s archive", dir, tm))
+    check("e2e", "invalid archive_max_bytes in .taskmarkrc fails",
+          code ~= 0 and out:match("archive_max_bytes") ~= nil, out)
 
     -- A malformed config file is never fatal -- falls back to conventional
     -- defaults exactly as if no config file existed.

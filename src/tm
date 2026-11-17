@@ -80,9 +80,9 @@ Commands:
   payload    Print a task's payload, or append to it or replace it from
              standard input (--append, --replace)
   sweep      Move every completed task from active.tm.md into completed.tm.md
-             (newest first; --sprint LABEL buckets under ## Sprint LABEL)
-  archive    Archive sections aged out of completed.tm.md into
-             archive/<YYYY>/<YYYY-MM>.tm.md
+             (newest first)
+  archive    Archive tasks aged out of completed.tm.md into
+             archive/<YYYY>/<YYYY-MM>.tm.md (--max-bytes N caps size)
   check-shas Report git:<sha> citations that no longer name a commit
              (--branch REF: or are not reachable from REF)
   remap      Replace git:OLD with git:NEW in every task file, after a squash
@@ -130,8 +130,7 @@ elseif cmd == "check-shas" or cmd == "remap" then
 elseif cmd == "sweep" then
     require("tmsweep").run({ "--sweep", table.unpack(rest) })
 elseif cmd == "rotate" then
-    fail("tm rotate was removed in SPEC-TASKMARK-04: use 'tm sweep' " ..
-         "(add --sprint LABEL to bucket under ## Sprint LABEL).")
+    fail("tm rotate was removed in SPEC-TASKMARK-04: use 'tm sweep'.")
 elseif cmd == "archive" then
     require("tmsweep").run({ "--archive", table.unpack(rest) })
 elseif cmd == "validate" then

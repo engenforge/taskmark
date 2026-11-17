@@ -170,22 +170,22 @@ pass \fBvalidate\fR.\&
 \fBsweep\fR
 .RS 4
 Move every `\- [x]` task and its payload out of \fIactive.\&tm.\&md\fR and into
-\fIcompleted.\&tm.\&md\fR, bucketed under a "## YYYY\-MM" section for the month
-of the sweep, or "## Sprint \fILABEL\fR" with \fB\-\-sprint\fR.\& Tasks within a
-section and sections within the file are kept in strict reverse chronological
-order (newest completed first).\& Headings and top\-level prose in \fIactive.\&tm.\&md\fR
-are never swept, even when every task beneath them is done.\& \fIfuture.\&tm.\&md\fR
-is never read or written.\&
+\fIcompleted.\&tm.\&md\fR, directly beneath its title with no section headings,
+ordered newest first per sweep.\&
+Headings and top\-level prose in \fIactive.\&tm.\&md\fR are never swept, even when
+every task beneath them is done.\& \fIfuture.\&tm.\&md\fR is never read or written.\&
 .PP
 .RE
-\fBarchive\fR
+\fBarchive\fR [\-\-max\-bytes \fIN\fR]
 .RS 4
-Move sections aged out of \fIcompleted.\&tm.\&md\fR into
+Move individual tasks aged out of \fIcompleted.\&tm.\&md\fR into
 \fI.\&tasks/archive/<YYYY>/<YYYY\-MM>.\&tm.\&md\fR, grouped by the month of
-each section'\&s most recent \fBCompleted\fR task and inserted newest first
-beneath the archive file'\&s title.\& A section is retained if it is among
-the 2 newest or its most recent \fBCompleted\fR task is dated within the
-last 14 days.\&
+each task'\&s \fBCompleted\fR date and inserted newest first beneath the
+archive file'\&s title.\& A task is retained if it is among the 2 newest
+or its \fBCompleted\fR date is within the last 14 days, unless
+\fB\-\-max\-bytes\fR (or \fBarchive_max_bytes\fR) is greater than 0 and
+\fIcompleted.\&tm.\&md\fR exceeds that size, in which case the oldest dated
+tasks archive first while always keeping at least the newest task.\&
 .PP
 .RE
 \fBcheck\-shas\fR [\-\-branch \fIREF\fR] [\-\-tasks\-dir \fIDIR\fR]
@@ -362,10 +362,10 @@ With \fBclaim\fR: replace an existing `Claimed` field in place instead of
 refusing.\&
 .PP
 .RE
-\fB\-\-sprint\fR \fILABEL\fR
+\fB\-\-max\-bytes\fR \fIN\fR
 .RS 4
-With \fBsweep\fR: bucket the swept tasks under "## Sprint \fILABEL\fR" instead
-of the current month.\&
+With \fBarchive\fR: keep \fIcompleted.\&tm.\&md\fR within \fIN\fR bytes (`0` disables
+size\-based aging), overriding \fBarchive_max_bytes\fR in \fI.\&taskmarkrc\fR.\&
 .PP
 .RE
 \fB\-\-dry\-run\fR
@@ -482,12 +482,12 @@ Planned work not yet scheduled to a sprint.\&
 .RE
 \fI.\&tasks/completed.\&tm.\&md\fR
 .RS 4
-Strict reverse\-chronological archive of completed work, newest first.\&
+Reverse\-chronological archive of completed work, newest first per sweep.\&
 .PP
 .RE
 \fI.\&tasks/archive/<YYYY>/<YYYY\-MM>.\&tm.\&md\fR
 .RS 4
-Sections aged out of \fIcompleted.\&tm.\&md\fR, newest first.\& Tool\-managed;
+Tasks aged out of \fIcompleted.\&tm.\&md\fR, newest first.\& Tool\-managed;
 never hand\-authored.\&
 .PP
 .RE
@@ -521,6 +521,7 @@ active_file: active\&.tm\&.md
 future_file: future\&.tm\&.md
 completed_file: completed\&.tm\&.md
 archive_dir: archive
+archive_max_bytes: 0
 .fi
 .RE
 .PP

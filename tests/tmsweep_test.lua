@@ -37,79 +37,6 @@ local function join(lines)
     return table.concat(lines, "\n")
 end
 
--- ── boundary_sections ────────────────────────────────────────────────────
--- Groups completed.tm.md by "## Sprint ..." sections, however deeply
--- they're nested under a top H1 -- unaffected by the move to task-level
--- sweep.
-
-do
-    local lines = lines_of([[
-# Sprint One
-- [ ] task a
-- [x] task b
-
-# Sprint Two
-- [x] task c]])
-    local boundaries = core.boundary_sections(lines)
-    check("boundary_sections", "flat H1 siblings: two boundaries", #boundaries == 2)
-    check("boundary_sections", "flat H1 siblings: titles", boundaries[1] and boundaries[1].title == "Sprint One"
-          and boundaries[2] and boundaries[2].title == "Sprint Two")
-    check("boundary_sections", "flat H1 siblings: body_end at next header/EOF",
-          boundaries[1] and boundaries[1].body_end == 5 and boundaries[2] and boundaries[2].body_end == #lines + 1)
-end
-
-do
-    local lines = lines_of([[
-# Active Sprints
-
-## Sprint A
-- [ ] task a
-
-## Sprint B
-- [x] task b]])
-    local boundaries = core.boundary_sections(lines)
-    check("boundary_sections", "H1-wrapping-H2: wrapper has no direct task, recurses into both children",
-          #boundaries == 2 and boundaries[1].title == "Sprint A" and boundaries[2].title == "Sprint B")
-end
-
-do
-    local lines = lines_of([[
-## Bootstrap Remediation (Jul 11)
-
-### Speed
-- [x] speed task
-
-### Size
-- [ ] size task]])
-    local boundaries = core.boundary_sections(lines)
-    check("boundary_sections", "H2-wrapping-H3: two grandchild boundaries",
-          #boundaries == 2 and boundaries[1].title == "Speed" and boundaries[2].title == "Size")
-end
-
-do
-    local lines = lines_of([[
-# Wrapper
-## A
-- [x] a
-## B
-- [x] b]])
-    local boundaries = core.boundary_sections(lines)
-    check("boundary_sections", "wrapper with no direct tasks recurses into children",
-          #boundaries == 2 and boundaries[1].title == "A" and boundaries[2].title == "B")
-end
-
-do
-    local lines = lines_of([[
-# Sprint One
-- [x] a
-
-# Sprint Two
-- [x] b]])
-    local boundaries = core.boundary_sections(lines)
-    check("boundary_sections", "flat headers owning direct tasks are their own boundaries",
-          #boundaries == 2 and boundaries[1].title == "Sprint One" and boundaries[2].title == "Sprint Two")
-end
-
 -- ── sweep() ──────────────────────────────────────────────────────────────
 
 do
@@ -190,9 +117,9 @@ do
     local completed = lines_of([[
 # Completed Archive]])
     local moved = { { lines = { "- [x] A task", "    > **Completed:** 2026-09-01" } } }
-    local result = core.insert_into_completed(completed, moved, "Sprint 2026-S2")
-    check("insert_into_completed", "creates a new H2 sprint heading after the first heading",
-          join(result):match("# Completed Archive\n\n## Sprint 2026%-S2\n\n%- %[x%] A task") ~= nil)
+    local result = core.insert_into_completed(completed, moved)
+    check("insert_into_completed", "inserts directly beneath the document title with no section heading",
+          join(result) == "# Completed Archive\n\n- [x] A task\n    > **Completed:** 2026-09-01", join(result))
 end
 
 do
@@ -200,96 +127,42 @@ do
     local completed = lines_of([[
 # Whatever This Heading Says]])
     local moved = { { lines = { "- [x] A task" } } }
-    local result = core.insert_into_completed(completed, moved, nil)
+    local result = core.insert_into_completed(completed, moved)
     check("insert_into_completed", "inserts after the first heading regardless of its text",
           result[1] == "# Whatever This Heading Says" and result[3] == "- [x] A task")
 end
 
 do
-    -- A section for the current sprint already at the top: append into it
-    -- rather than creating a duplicate H2.
+    -- Existing tasks in completed.tm.md remain below newly swept tasks.
     local completed = lines_of([[
 # Completed Archive
-
-## Sprint 2026-S2
 
 - [x] Earlier task
     > **Completed:** 2026-09-01
 
-## Sprint 2026-S1
-
 - [x] Old task
     > **Completed:** 2026-08-01]])
     local moved = { { lines = { "- [x] New task", "    > **Completed:** 2026-09-02" } } }
-    local result = core.insert_into_completed(completed, moved, "Sprint 2026-S2")
+    local result = core.insert_into_completed(completed, moved)
     local text = join(result)
-    local _, count = text:gsub("## Sprint 2026%-S2", "")
-    check("insert_into_completed", "does not duplicate the existing sprint heading", count == 1)
-    check("insert_into_completed", "new task prepended into the existing section (reverse chronological)",
-          text:match("New task.-Earlier task") ~= nil)
-    check("insert_into_completed", "older sprint section is untouched and still follows",
-          text:match("Earlier task.-## Sprint 2026%-S1.-Old task") ~= nil)
-end
-
-do
-    -- YYYY-MM formatted heading without 'Sprint' prefix
-    local completed = lines_of([[
-# Completed Archive]])
-    local moved = { { lines = { "- [x] A task", "    > **Completed:** 2026-11-08" } } }
-    local result = core.insert_into_completed(completed, moved, "2026-11")
-    check("insert_into_completed", "uses the heading text exactly as given",
-          join(result):match("# Completed Archive\n\n## 2026%-11\n\n%- %[x%] A task") ~= nil)
-end
-
-do
-    -- No sprint label: no wrapping heading is invented.
-    local completed = lines_of([[
-# Completed Archive]])
-    local moved = { { lines = { "- [x] A task" } } }
-    local result = core.insert_into_completed(completed, moved, nil)
-    check("insert_into_completed", "omits any sprint heading when no label is given",
-          not join(result):match("## Sprint"))
+    check("insert_into_completed", "new task prepended above existing tasks (reverse chronological)",
+          text:match("# Completed Archive\n\n%- %[x%] New task.-Earlier task.-Old task") ~= nil, text)
+    check("insert_into_completed", "creates no H2 section headings",
+          not text:match("\n## "))
 end
 
 do
     -- Multiple tasks swept together are ordered reverse-chronologically by completion date
     local completed = lines_of([[
-# Completed Archive
-
-## 2026-11]])
+# Completed Archive]])
     local moved = {
         { lines = { "- [x] Earlier task", "    > **Completed:** 2026-11-02 git:1111111" } },
         { lines = { "- [x] Later task", "    > **Completed:** 2026-11-08 git:2222222" } },
     }
-    local result = core.insert_into_completed(completed, moved, "2026-11")
+    local result = core.insert_into_completed(completed, moved)
     local text = join(result)
     check("insert_into_completed", "tasks within a sweep batch are ordered reverse-chronologically",
-          text:match("Later task.-Earlier task") ~= nil)
-end
-
-do
-    -- A new section always goes on top (§6.3), even above sections whose
-    -- headings sort after it as text -- e.g. a pre-0.4 file of "## Sprint"
-    -- sections, or Sprint S10 after S9.
-    local completed = lines_of([[
-# Completed Archive
-
-## Sprint 2026-S2
-
-- [x] s2 task
-
-## Sprint 2026-S1
-
-- [x] s1 task]])
-    local moved = { { lines = { "- [x] Fresh task" } } }
-    local text = join(core.insert_into_completed(completed, moved, "2026-11"))
-    check("insert_into_completed", "new month section lands above existing Sprint sections",
-          text:match("^# Completed Archive\n\n## 2026%-11\n\n%- %[x%] Fresh task\n\n## Sprint 2026%-S2") ~= nil, text)
-
-    completed = lines_of("# Completed\n\n## Sprint S9\n\n- [x] nine")
-    text = join(core.insert_into_completed(completed, { { lines = { "- [x] ten" } } }, "Sprint S10"))
-    check("insert_into_completed", "Sprint S10 lands above Sprint S9",
-          text:match("## Sprint S10.-## Sprint S9") ~= nil, text)
+          text:match("Later task.-Earlier task") ~= nil, text)
 end
 
 -- ── normalize_blank_lines() ──────────────────────────────────────────────
@@ -324,64 +197,27 @@ do
     check("normalize_blank_lines", "idempotent", join(once) == join(twice))
 end
 
--- ── section_completed_date ───────────────────────────────────────────────
-
-do
-    local block = lines_of([[
-## Sprint
-- [x] a
-    > **Completed:** 2026-08-20 git:abc1234
-- [x] b
-    > **Completed:** 2026-08-27 git:def5678]])
-    local core_tmscan = require("tmscan")
-    check("section_completed_date", "returns the latest Completed date among tasks",
-          core.section_completed_date(block) == core_tmscan.parse_iso8601("2026-08-27"))
-    check("section_completed_date", "nil when no task carries a Completed stamp",
-          core.section_completed_date(lines_of("# Sprint\n- [x] t")) == nil)
-end
-
 -- ── insert_into_completed() without a document title ────────────────────
 
 do
-    -- No `# Title`: the first heading is itself the top section. A matching
-    -- top section is prepended into, never duplicated.
+    -- No `# Title`: new tasks are inserted at the top of the file above
+    -- any existing content.
     local completed = lines_of([[
-## 2026-11
-
 - [x] Old task
-    > **Completed:** 2026-11-01
-
-## 2026-10
-
-- [x] Older task]])
+    > **Completed:** 2026-11-01]])
     local moved = { { lines = { "- [x] New task" } } }
-    local text = join(core.insert_into_completed(completed, moved, "2026-11"))
-    local _, count = text:gsub("## 2026%-11", "")
-    check("insert_into_completed", "no title: existing top section is not duplicated", count == 1, text)
-    check("insert_into_completed", "no title: new task prepended into the top section",
-          text:match("^## 2026%-11\n\n%- %[x%] New task\n\n%- %[x%] Old task") ~= nil, text)
+    local text = join(core.insert_into_completed(completed, moved))
+    check("insert_into_completed", "no title: new task inserted at top",
+          text:match("^%- %[x%] New task\n\n%- %[x%] Old task") ~= nil, text)
 end
 
 do
-    -- No `# Title` and the top section is older: the new section goes
-    -- above it, at the top of the file.
-    local completed = lines_of([[
-## 2026-10
-
-- [x] Older task]])
-    local moved = { { lines = { "- [x] New task" } } }
-    local text = join(core.insert_into_completed(completed, moved, "2026-11"))
-    check("insert_into_completed", "no title: new section inserted above the older one",
-          text:match("^## 2026%-11\n\n%- %[x%] New task\n\n## 2026%-10") ~= nil, text)
-end
-
-do
-    -- Preamble prose with no headings stays above the inserted section.
+    -- Preamble prose with no headings stays above the inserted task.
     local completed = lines_of("Notes about this archive.")
     local moved = { { lines = { "- [x] New task" } } }
-    local text = join(core.insert_into_completed(completed, moved, "2026-11"))
-    check("insert_into_completed", "no headings: section appended after preamble prose",
-          text == "Notes about this archive.\n\n## 2026-11\n\n- [x] New task", text)
+    local text = join(core.insert_into_completed(completed, moved))
+    check("insert_into_completed", "no headings: task appended after preamble prose",
+          text == "Notes about this archive.\n\n- [x] New task", text)
 end
 
 -- ── prepend_blocks() (archive files, newest first) ───────────────────────
@@ -405,20 +241,18 @@ do
     local completed = lines_of([[
 # Completed Archive
 
-## A
 - [x] a
     > **Completed:** 2026-08-20
 
-## B
 - [x] b
     > **Completed:** 2026-01-01]])
     local nc, groups = core.cap_completed(completed,
         { now = "2026-08-27T00:00:00Z", keep_min = 1, keep_days = 14 })
-    check("cap_completed", "archives the old section past keep_min",
+    check("cap_completed", "archives the old task past keep_min",
           groups ~= nil and #groups == 1 and #groups[1].blocks == 1)
-    check("cap_completed", "kept section remains in completed.tm.md",
-          join(nc):match("## A") ~= nil and not join(nc):match("## B"))
-    check("cap_completed", "groups by year/month of the section's own Completed date",
+    check("cap_completed", "kept task remains in completed.tm.md",
+          join(nc):match("%- %[x%] a") ~= nil and not join(nc):match("%- %[x%] b"))
+    check("cap_completed", "groups by year/month of the task's own Completed date",
           groups and groups[1].year == "2026" and groups[1].month == "01")
 end
 
@@ -426,39 +260,158 @@ do
     local completed = lines_of([[
 # Completed Archive
 
-## A
 - [x] a
     > **Completed:** 2026-08-20
 
-## B
 - [x] b
     > **Completed:** 2026-08-25]])
     local nc, groups = core.cap_completed(completed,
         { now = "2026-08-27T00:00:00Z", keep_min = 1, keep_days = 14 })
-    check("cap_completed", "no-op when all sections are recent", nc == nil and groups == nil)
+    check("cap_completed", "no-op when all tasks are recent", nc == nil and groups == nil)
 end
 
 do
-    -- Default retention: the 2 newest sections stay regardless of age;
-    -- older ones go once their newest Completed stamp passes 14 days.
+    -- Default retention: the 2 newest tasks stay regardless of age;
+    -- older ones go once their Completed stamp passes 14 days.
+    local completed = lines_of([[
+# Completed Archive
+
+- [x] a
+    > **Completed:** 2026-08-01
+
+- [x] b
+    > **Completed:** 2026-07-01
+
+- [x] c
+    > **Completed:** 2026-06-01]])
+    local nc, groups = core.cap_completed(completed, { now = "2026-12-01T00:00:00Z" })
+    check("cap_completed", "default keep_min is 2 tasks",
+          groups ~= nil and #groups == 1 and groups[1].month == "06"
+          and join(nc):match("%- %[x%] b") ~= nil and not join(nc):match("%- %[x%] c"))
+end
+
+do
+    -- Individual-task archiving also works on legacy files with ## headings
+    -- and removes any ## heading left empty after its tasks archive.
     local completed = lines_of([[
 # Completed Archive
 
 ## 2026-08
 - [x] a
-    > **Completed:** 2026-08-01
+    > **Completed:** 2026-08-25
 
-## 2026-07
 - [x] b
-    > **Completed:** 2026-07-01
+    > **Completed:** 2026-08-24
 
-## 2026-06
+## 2026-01
 - [x] c
-    > **Completed:** 2026-06-01]])
-    local nc, groups = core.cap_completed(completed, { now = "2026-12-01T00:00:00Z" })
-    check("cap_completed", "default keep_min is 2 sections",
-          groups ~= nil and #groups == 1 and groups[1].month == "06"
-          and join(nc):match("## 2026%-07") ~= nil and not join(nc):match("## 2026%-06"))
+    > **Completed:** 2026-01-01]])
+    local nc, groups = core.cap_completed(completed, { now = "2026-08-27T00:00:00Z" })
+    local text = nc and join(nc) or ""
+    check("cap_completed", "archives individual task out of legacy section",
+          groups ~= nil and #groups == 1 and groups[1].month == "01")
+    check("cap_completed", "drops legacy ## heading left empty after archiving",
+          not text:match("## 2026%-01") and text:match("## 2026%-08") ~= nil, text)
+end
+
+do
+    -- max_bytes > 0 archives oldest tasks first even if recent, always
+    -- keeping at least 1 newest task.
+    local completed = lines_of([[
+# Completed Archive
+
+- [x] newest task
+    > **Completed:** 2026-08-26
+
+- [x] middle task
+    > **Completed:** 2026-08-25
+
+- [x] oldest task
+    > **Completed:** 2026-08-24]])
+    -- Size of "# Completed Archive\n\n- [x] newest task\n    > **Completed:** 2026-08-26\n" is ~73 bytes.
+    local nc, groups = core.cap_completed(completed,
+        { now = "2026-08-27T00:00:00Z", max_bytes = 90 })
+    local text = nc and join(nc) or ""
+    check("cap_completed max_bytes", "archives middle and oldest recent tasks to fit max_bytes",
+          groups ~= nil and #groups == 1 and #groups[1].blocks == 2)
+    check("cap_completed max_bytes", "keeps newest task in completed.tm.md",
+          text:match("newest task") ~= nil and not text:match("middle task") and not text:match("oldest task"), text)
+
+    -- Even if max_bytes is smaller than the single newest task, at least 1 newest task is kept.
+    local nc2, groups2 = core.cap_completed(completed,
+        { now = "2026-08-27T00:00:00Z", max_bytes = 10 })
+    local text2 = nc2 and join(nc2) or ""
+    check("cap_completed max_bytes", "always keeps at least 1 newest task",
+          groups2 ~= nil and text2:match("newest task") ~= nil and not text2:match("middle task"), text2)
+end
+
+do
+    -- Completed stamps inside fenced code blocks or non-4-space indents are ignored.
+    local completed = lines_of([[
+# Completed Archive
+
+- [x] newest
+    > **Completed:** 2026-08-26
+
+- [x] middle
+    > **Completed:** 2026-08-25
+
+- [x] fenced stamp task
+    ```markdown
+    > **Completed:** 2020-01-01
+    ```
+      > **Completed:** 2020-01-01
+    > **Completed:** 2026-08-24]])
+    local nc, groups = core.cap_completed(completed,
+        { now = "2026-08-27T00:00:00Z", keep_min = 2, keep_days = 14 })
+    check("cap_completed fence", "ignores fenced/mis-indented Completed stamps (task is recent, not 2020-01)",
+          nc == nil and groups == nil)
+end
+
+do
+    -- Multi-level legacy heading cleanup: ## 2026-10 -> ### Week A both removed when emptied.
+    local completed = lines_of([[
+# Completed Archive
+
+## 2026-08
+- [x] a
+    > **Completed:** 2026-08-25
+
+- [x] b
+    > **Completed:** 2026-08-24
+
+## 2026-10
+
+### Week A
+- [x] old
+    > **Completed:** 2026-01-01]])
+    local nc, groups = core.cap_completed(completed, { now = "2026-08-27T00:00:00Z" })
+    local text = nc and join(nc) or ""
+    check("cap_completed nested headings", "removes both ### Week A and parent ## 2026-10 when emptied",
+          groups ~= nil and not text:match("## 2026%-10") and not text:match("### Week A"), text)
+end
+
+do
+    -- CRLF size accounting: nl = "\r\n" counts 2 bytes per line ending.
+    local completed = lines_of([[
+# Completed Archive
+
+- [x] newest
+    > **Completed:** 2026-08-26
+
+- [x] older
+    > **Completed:** 2026-08-25]])
+    -- With \n: "# Completed Archive\n\n- [x] newest\n    > **Completed:** 2026-08-26\n" = 68 bytes.
+    -- With \r\n: 4 line endings * 2 = +4 bytes = 72 bytes.
+    -- max_bytes = 70 is >= 68 (LF) so LF would keep? Wait: both tasks together are > 70.
+    -- With 1 task remaining: LF is 68 <= 70, CRLF is 72 > 70; test that CRLF triggers archiving of older
+    -- when total CRLF > max_bytes while total LF would be <= max_bytes.
+    local two_lf = #table.concat(completed, "\n") + 1
+    local nc_lf = core.cap_completed(completed, { now = "2026-08-27T00:00:00Z", max_bytes = two_lf, nl = "\n" })
+    local nc_crlf, groups_crlf = core.cap_completed(completed, { now = "2026-08-27T00:00:00Z", max_bytes = two_lf, nl = "\r\n" })
+    check("cap_completed crlf", "LF at exact byte boundary needs no archive", nc_lf == nil)
+    check("cap_completed crlf", "CRLF exceeds the same byte boundary and archives older task",
+          nc_crlf ~= nil and groups_crlf ~= nil and #groups_crlf == 1)
 end
 
 -- ── end-to-end CLI ────────────────────────────────────────────────────────
@@ -513,37 +466,17 @@ do
     check("e2e sweep", "active.tm.md keeps the pending task and drops the done one",
           (read_file(dir .. "/active.tm.md") or ""):match("Pending task") ~= nil
           and not (read_file(dir .. "/active.tm.md") or ""):match("Done task"))
-    local month = os.date("%Y-%m")
-    check("e2e sweep", "completed.tm.md gains a ## <sweep month> section with the task",
-          (read_file(dir .. "/completed.tm.md") or ""):find("## " .. month .. "\n\n- [x] Done task", 1, true) ~= nil)
+    check("e2e sweep", "completed.tm.md places the task directly beneath the title with no H2 heading",
+          (read_file(dir .. "/completed.tm.md") or ""):find("# Completed Archive\n\n- [x] Done task", 1, true) ~= nil
+          and not (read_file(dir .. "/completed.tm.md") or ""):match("\n## "))
 
     os.execute("rm -rf " .. dir)
 end
 
 do
-    -- --sprint LABEL buckets the swept tasks under "## Sprint LABEL".
-    local dir = tmpdir()
-    write_file(dir .. "/active.tm.md", "# Current Sprint\n\n- [x] Sprint task\n")
-    write_file(dir .. "/completed.tm.md", "# Completed Archive\n")
-    local out, code = run_cli(string.format("--sweep --sprint 2026-S2 %s/active.tm.md", dir))
-    check("e2e sweep --sprint", "exit 0", code == 0, out)
-    check("e2e sweep --sprint", "tasks bucketed under ## Sprint 2026-S2",
-          (read_file(dir .. "/completed.tm.md") or ""):find("## Sprint 2026-S2\n\n- [x] Sprint task", 1, true) ~= nil)
-    os.execute("rm -rf " .. dir)
-end
-
-do
-    -- --sprint always means "## Sprint <label>", whatever the label looks like.
-    local dir = tmpdir()
-    write_file(dir .. "/completed.tm.md", "# Completed Archive\n")
-    for _, label in ipairs({ "2026-11", "Sprint-1" }) do
-        write_file(dir .. "/active.tm.md", "# Current Sprint\n\n- [x] task for " .. label .. "\n")
-        run_cli(string.format("--sweep --sprint %s %s/active.tm.md", label, dir))
-    end
-    local body = read_file(dir .. "/completed.tm.md") or ""
-    check("e2e sweep --sprint", "date-like label becomes ## Sprint 2026-11", body:find("## Sprint 2026-11\n", 1, true) ~= nil, body)
-    check("e2e sweep --sprint", "Sprint-prefixed label becomes ## Sprint Sprint-1", body:find("## Sprint Sprint-1\n", 1, true) ~= nil, body)
-    os.execute("rm -rf " .. dir)
+    -- --sprint was removed: passing it is an unknown option error.
+    local out, code = run_cli("--sweep --sprint 2026-S2")
+    check("e2e sweep --sprint", "--sprint is no longer an option", code ~= 0 and out:match("Unknown option") ~= nil, out)
 end
 
 do
@@ -584,32 +517,82 @@ do
 end
 
 do
-    -- --archive lands sections under archive/<YYYY>/<YYYY-MM>.tm.md,
+    -- --archive lands individual tasks under archive/<YYYY>/<YYYY-MM>.tm.md,
     -- newest first beneath the archive title.
     local dir = tmpdir()
     local body = "# Completed Archive\n\n"
     for n = 2, 1, -1 do
-        body = body .. string.format("## R%d\n- [x] t\n    > **Completed:** 2026-08-2%d\n\n", n, n)
+        body = body .. string.format("- [x] r%d\n    > **Completed:** 2026-08-2%d\n\n", n, n)
     end
-    body = body .. "## NEWER\n- [x] newer thing\n    > **Completed:** 2026-01-20\n\n"
-    body = body .. "## OLD\n- [x] old thing\n    > **Completed:** 2026-01-15\n"
+    body = body .. "- [x] newer thing\n    > **Completed:** 2026-01-20\n\n"
+    body = body .. "- [x] old thing\n    > **Completed:** 2026-01-15\n"
     write_file(dir .. "/completed.tm.md", body)
     write_file(dir .. "/active.tm.md", "# Current Sprint\n")
     os.execute("mkdir -p " .. dir .. "/archive/2026")
-    write_file(dir .. "/archive/2026/2026-01.tm.md", "# Archived Tasks — 2026-01\n\n## OLDEST\n- [x] oldest\n    > **Completed:** 2026-01-02\n")
+    write_file(dir .. "/archive/2026/2026-01.tm.md", "# Archived Tasks — 2026-01\n\n- [x] oldest\n    > **Completed:** 2026-01-02\n")
 
     local out, code = run_cli(string.format("--archive %s/active.tm.md %s/completed.tm.md", dir, dir))
     check("e2e archive", "exit 0", code == 0, out)
-    check("e2e archive", "reports the archived sections",
-          out:match('Archived section: "OLD"') ~= nil and out:match('Archived section: "NEWER"') ~= nil
+    check("e2e archive", "reports the archived tasks",
+          out:match('Archived task: "old thing"') ~= nil and out:match('Archived task: "newer thing"') ~= nil
           and out:match("2026/2026%-01%.tm%.md") ~= nil, out)
     local archived = read_file(dir .. "/archive/2026/2026-01.tm.md") or ""
     check("e2e archive", "archive file keeps its title first", archived:match("^# Archived Tasks — 2026%-01\n") ~= nil)
     check("e2e archive", "archive file is newest first",
-          archived:match("## NEWER.-## OLD\n.-## OLDEST") ~= nil, archived)
+          archived:match("newer thing.-old thing.-oldest") ~= nil, archived)
     local remaining = read_file(dir .. "/completed.tm.md") or ""
-    check("e2e archive", "aged sections removed; 2 newest kept",
-          not remaining:match("OLD") and not remaining:match("NEWER") and remaining:match("## R2.-## R1") ~= nil, remaining)
+    check("e2e archive", "aged tasks removed; 2 newest kept",
+          not remaining:match("old thing") and not remaining:match("newer thing") and remaining:match("%- %[x%] r2.-%- %[x%] r1") ~= nil, remaining)
+
+    os.execute("rm -rf " .. dir)
+end
+
+do
+    -- --archive --max-bytes N trims oldest tasks until completed.tm.md <= N bytes.
+    local dir = tmpdir()
+    local today = os.date("!%Y-%m-%d")
+    local body = "# Completed Archive\n\n"
+        .. string.format("- [x] newest\n    > **Completed:** %s\n\n", today)
+        .. string.format("- [x] older\n    > **Completed:** %s\n", today)
+    write_file(dir .. "/completed.tm.md", body)
+    write_file(dir .. "/active.tm.md", "# Current Sprint\n")
+
+    local out, code = run_cli(string.format("--archive --max-bytes 80 %s/active.tm.md %s/completed.tm.md", dir, dir))
+    check("e2e archive --max-bytes", "exit 0", code == 0, out)
+    local remaining = read_file(dir .. "/completed.tm.md") or ""
+    check("e2e archive --max-bytes", "keeps newest task and archives older task",
+          remaining:match("newest") ~= nil and not remaining:match("older") and #remaining <= 80, remaining)
+
+    local bad_out, bad_code = run_cli(string.format("--archive --max-bytes nope %s/active.tm.md", dir))
+    check("e2e archive --max-bytes", "invalid --max-bytes exits non-zero", bad_code ~= 0, bad_out)
+
+    local no_arch_out, no_arch_code = run_cli(string.format("--sweep --max-bytes 80 %s/active.tm.md", dir))
+    check("e2e archive --max-bytes", "--max-bytes without --archive exits non-zero",
+          no_arch_code ~= 0 and no_arch_out:find("--max-bytes applies only to --archive", 1, true) ~= nil, no_arch_out)
+
+    -- Dateless tasks keeping file over max_bytes emits a warning on stderr.
+    write_file(dir .. "/completed.tm.md", "# Completed Archive\n\n- [x] dateless one\n\n- [x] dateless two\n")
+    local w_out_f, w_err_f = dir .. "/w_out.txt", dir .. "/w_err.txt"
+    local wp = io.popen(string.format("lua %s/../src/tmsweep.lua --archive --max-bytes 10 %s/active.tm.md %s/completed.tm.md >%s 2>%s; echo $?",
+        script_dir, dir, dir, w_out_f, w_err_f))
+    local w_code = tonumber(wp:read("*a"):match("(%d+)")) or -1
+    wp:close()
+    local w_err = read_file(w_err_f) or ""
+    check("e2e archive dateless over cap", "exits 0 and warns on stderr",
+          w_code == 0 and w_err:match("warning:.*exceeds max_bytes") ~= nil, w_err)
+
+    -- --dry-run also prints the over-cap warning when some tasks would archive.
+    write_file(dir .. "/completed.tm.md", "# Completed Archive\n\n"
+        .. string.format("- [x] newest task with long title to exceed cap\n    > **Completed:** %s\n\n", today)
+        .. string.format("- [x] older task\n    > **Completed:** %s\n", today))
+    local dr_out_f, dr_err_f = dir .. "/dr_out.txt", dir .. "/dr_err.txt"
+    local drp = io.popen(string.format("lua %s/../src/tmsweep.lua --archive --max-bytes 10 --dry-run %s/active.tm.md %s/completed.tm.md >%s 2>%s; echo $?",
+        script_dir, dir, dir, dr_out_f, dr_err_f))
+    local dr_code = tonumber(drp:read("*a"):match("(%d+)")) or -1
+    drp:close()
+    local dr_err = read_file(dr_err_f) or ""
+    check("e2e archive dry-run over cap", "warns on stderr even under --dry-run when tasks would archive",
+          dr_code == 0 and dr_err:match("warning:.*exceeds max_bytes") ~= nil, dr_err)
 
     os.execute("rm -rf " .. dir)
 end

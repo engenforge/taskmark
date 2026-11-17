@@ -34,14 +34,14 @@ local tmio   = require("tmio")
 
 local M = {}
 
--- Conventional paths this spec has always used, unchanged when no
--- configuration is present.
+-- Conventional defaults unchanged when no configuration is present.
 M.DEFAULTS = {
-    tasks_dir      = ".tasks",
-    active_file    = "active.tm.md",
-    future_file    = "future.tm.md",
-    completed_file = "completed.tm.md",
-    archive_dir    = "archive",
+    tasks_dir         = ".tasks",
+    active_file       = "active.tm.md",
+    future_file       = "future.tm.md",
+    completed_file    = "completed.tm.md",
+    archive_dir       = "archive",
+    archive_max_bytes = "0",
 }
 
 M.CONFIG_FILENAME = ".taskmarkrc"

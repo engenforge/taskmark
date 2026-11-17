@@ -138,20 +138,20 @@ the current working directory (the layout described by the spec).
 
 *sweep*
 	Move every `- [x]` task and its payload out of _active.tm.md_ and into
-	_completed.tm.md_, bucketed under a "## YYYY-MM" section for the month
-	of the sweep, or "## Sprint _LABEL_" with *--sprint*. Tasks within a
-	section and sections within the file are kept in strict reverse chronological
-	order (newest completed first). Headings and top-level prose in _active.tm.md_
-	are never swept, even when every task beneath them is done. _future.tm.md_
-	is never read or written.
+	_completed.tm.md_, directly beneath its title with no section headings,
+	ordered newest first per sweep.
+	Headings and top-level prose in _active.tm.md_ are never swept, even when
+	every task beneath them is done. _future.tm.md_ is never read or written.
 
-*archive*
-	Move sections aged out of _completed.tm.md_ into
+*archive* [--max-bytes _N_]
+	Move individual tasks aged out of _completed.tm.md_ into
 	_.tasks/archive/<YYYY>/<YYYY-MM>.tm.md_, grouped by the month of
-	each section's most recent *Completed* task and inserted newest first
-	beneath the archive file's title. A section is retained if it is among
-	the 2 newest or its most recent *Completed* task is dated within the
-	last 14 days.
+	each task's *Completed* date and inserted newest first beneath the
+	archive file's title. A task is retained if it is among the 2 newest
+	or its *Completed* date is within the last 14 days, unless
+	*--max-bytes* (or *archive_max_bytes*) is greater than 0 and
+	_completed.tm.md_ exceeds that size, in which case the oldest dated
+	tasks archive first while always keeping at least the newest task.
 
 *check-shas* [--branch _REF_] [--tasks-dir _DIR_]
 	Report each `git:<sha>` citation in any task file, the archive
@@ -283,9 +283,9 @@ the current working directory (the layout described by the spec).
 	With *claim*: replace an existing `Claimed` field in place instead of
 	refusing.
 
-*--sprint* _LABEL_
-	With *sweep*: bucket the swept tasks under "## Sprint _LABEL_" instead
-	of the current month.
+*--max-bytes* _N_
+	With *archive*: keep _completed.tm.md_ within _N_ bytes (`0` disables
+	size-based aging), overriding *archive_max_bytes* in _.taskmarkrc_.
 
 *--dry-run*
 	Report what would move and change nothing. Applies to *sweep* and
@@ -377,10 +377,10 @@ _.tasks/future.tm.md_
 	Planned work not yet scheduled to a sprint.
 
 _.tasks/completed.tm.md_
-	Strict reverse-chronological archive of completed work, newest first.
+	Reverse-chronological archive of completed work, newest first per sweep.
 
 _.tasks/archive/<YYYY>/<YYYY-MM>.tm.md_
-	Sections aged out of _completed.tm.md_, newest first. Tool-managed;
+	Tasks aged out of _completed.tm.md_, newest first. Tool-managed;
 	never hand-authored.
 
 _<tasks-dir>/.tm.lock_
@@ -406,6 +406,7 @@ active_file: active.tm.md
 future_file: future.tm.md
 completed_file: completed.tm.md
 archive_dir: archive
+archive_max_bytes: 0
 ```
 
 Resolution is per key, highest priority first: an explicit command-line

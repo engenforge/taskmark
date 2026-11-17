@@ -2,7 +2,7 @@
 -- tmsweep — SPEC-TASKMARK-06 §5.3-§5.5 task-level sweep and archive aging.
 -- Exposed as the `sweep` and `archive` subcommands of the `tm` tool, and
 -- also runnable directly:
---   tmsweep [--sweep [--sprint LABEL]] [--archive] [--dry-run]
+--   tmsweep [--sweep] [--archive [--max-bytes N]] [--dry-run]
 --           [--tasks-dir DIR] [active.tm.md [completed.tm.md]]
 --   tmsweep -h | --help
 
@@ -17,31 +17,33 @@ local USAGE = [=[
 tmsweep — SPEC-TASKMARK-06 §5.3-§5.5 sweep and archive
 
 Usage:
-  tmsweep [--sweep [--sprint LABEL]] [--archive] [--dry-run]
+  tmsweep [--sweep] [--archive [--max-bytes N]] [--dry-run]
           [--tasks-dir DIR] [active.tm.md [completed.tm.md]]
   tmsweep -h | --help
 
   Manage task lifecycle across .tasks/ documents:
 
-  --sweep      Move every `- [x]` task and its payload out of active.tm.md
-               into completed.tm.md, newest first, under a `## YYYY-MM`
-               section for the month of the sweep (or `## Sprint LABEL`
-               with --sprint). Headings and top-level prose are never
-               swept, even when every task beneath them is done.
+  --sweep        Move every `- [x]` task and its payload out of active.tm.md
+                 into completed.tm.md, newest first, directly beneath its
+                 title. Headings and top-level prose are never swept, even
+                 when every task beneath them is done.
 
-  --archive    Move sections aged out of completed.tm.md into
-               archive/<YYYY>/<YYYY-MM>.tm.md, newest first, grouped by
-               the month of each section's most recent Completed task. A
-               section is retained if it is among the 2 newest or its most
-               recent Completed task is dated within the last 14 days.
+  --archive      Move tasks aged out of completed.tm.md into
+                 archive/<YYYY>/<YYYY-MM>.tm.md, newest first, grouped by
+                 the month of each task's Completed date. A task is retained
+                 if it is among the 2 newest or its Completed date is within
+                 the last 14 days, unless --max-bytes (or archive_max_bytes)
+                 is > 0 and completed.tm.md exceeds that size, in which case
+                 oldest dated tasks archive first (keeping at least 1 newest
+                 task).
 
   Both may be given together; the sweep runs before archiving.
 
 Options:
   --sweep         Sweep completed tasks from active.tm.md to completed.tm.md
-  --sprint LABEL  With --sweep: bucket under `## Sprint LABEL` instead of
-                  the current month
-  --archive       Archive aged-out sections from completed.tm.md to archive/
+  --archive       Archive aged-out tasks from completed.tm.md to archive/
+  --max-bytes N   With --archive: keep completed.tm.md within N bytes (0
+                  disables; overrides archive_max_bytes in .taskmarkrc)
   --dry-run       Report what would move and change nothing
   --tasks-dir     Directory holding the task files (default: .tasks, or
                   the tasks_dir set in .taskmarkrc -- see SPEC-TASKMARK-06 §9)
@@ -77,19 +79,23 @@ local function info(msg) print(msg) end
 local function M_run(args)
     args = args or arg
 
-    local sweep_flag, archive_flag, dry_run, tasks_dir, sprint_value
+    local sweep_flag, archive_flag, dry_run, tasks_dir, max_bytes_arg
     local positionals = {}
     local i = 1
     while i <= #args do
         local a = args[i]
         if a == "--sweep" then
             sweep_flag = true
-        elseif a == "--sprint" then
-            i = i + 1
-            sprint_value = args[i]
-            if not sprint_value then die("--sprint requires an argument") end
         elseif a == "--archive" then
             archive_flag = true
+        elseif a == "--max-bytes" then
+            i = i + 1
+            local raw = args[i]
+            if not raw then die("--max-bytes requires an argument") end
+            if not raw:match("^%d+$") then
+                die("--max-bytes must be a non-negative integer: " .. raw)
+            end
+            max_bytes_arg = tonumber(raw)
         elseif a == "--dry-run" then
             dry_run = true
         elseif a == "--tasks-dir" then
@@ -111,8 +117,8 @@ local function M_run(args)
         io.stderr:write("No action given. Run 'tmsweep -h' for usage.\n")
         os.exit(1)
     end
-    if sprint_value and not sweep_flag then
-        die("--sprint applies only to --sweep")
+    if max_bytes_arg ~= nil and not archive_flag then
+        die("--max-bytes applies only to --archive")
     end
 
     -- Resolve file paths. A positional active.tm.md (and optional
@@ -128,12 +134,19 @@ local function M_run(args)
         completed_path = cfg.completed_path
     end
     local tasks_dir_resolved = completed_path:match("^(.*)/[^/]+$") or "."
+    local max_bytes = max_bytes_arg
+    if archive_flag and max_bytes == nil then
+        local raw = tostring(cfg.archive_max_bytes or "0")
+        if not raw:match("^%d+$") then
+            die("invalid archive_max_bytes in config (must be a non-negative integer): " .. raw)
+        end
+        max_bytes = tonumber(raw)
+    end
 
     local warned = {}
 
-    -- Sweep: move completed tasks from active into completed, newest first,
-    -- under the --sprint label or the current month. Returns true if
-    -- anything moved (or would, under --dry-run).
+    -- Sweep: move completed tasks from active into completed, newest first.
+    -- Returns true if anything moved (or would, under --dry-run).
     local function do_sweep()
         local active_lines, active_nl = read_file_content(active_path, warned)
         if not active_lines then die("no such file: " .. active_path) end
@@ -150,8 +163,7 @@ local function M_run(args)
             return false
         end
 
-        local heading = sprint_value and ("Sprint " .. sprint_value) or os.date("%Y-%m")
-        local new_completed = core.insert_into_completed(completed_lines, moved, heading)
+        local new_completed = core.insert_into_completed(completed_lines, moved)
         local descriptions = {}
         for _, mb in ipairs(moved) do
             local _, fields = tmscan.classify(mb.lines[1])
@@ -191,12 +203,19 @@ local function M_run(args)
         local now = os.date("!%Y-%m-%dT%H:%M:%SZ")
         local today = now:match("^(%d%d%d%d%-%d%d%-%d%d)") or os.date("%Y-%m-%d")
 
-        local new_completed_lines, archive_groups = core.cap_completed(completed_lines, {
+        local new_completed_lines, archive_groups, cap_info = core.cap_completed(completed_lines, {
             now = now,
+            max_bytes = max_bytes,
+            nl = completed_nl,
         })
 
         if not new_completed_lines or not archive_groups or #archive_groups == 0 then
-            if dry_run then info("No sections old enough to archive.") end
+            if cap_info and cap_info.over_cap then
+                io.stderr:write(string.format(
+                    "warning: %s is %d bytes (exceeds max_bytes=%d; dateless tasks or newest task could not be archived)\n",
+                    completed_path, cap_info.bytes, cap_info.max_bytes))
+            end
+            if dry_run then info("No tasks old enough to archive.") end
             return
         end
         new_completed_lines = core.normalize_blank_lines(new_completed_lines)
@@ -210,18 +229,24 @@ local function M_run(args)
             end
         end
 
+        if cap_info and cap_info.over_cap then
+            io.stderr:write(string.format(
+                "warning: %s is %d bytes (exceeds max_bytes=%d; dateless tasks or newest task could not be archived)\n",
+                completed_path, cap_info.bytes, cap_info.max_bytes))
+        end
+
         if dry_run then
             for _, item in ipairs(archived) do
-                info(string.format('Would archive section: "%s" -> %s', item.title, item.dest))
+                info(string.format('Would archive task: "%s" -> %s', item.title, item.dest))
             end
-            info(string.format("%d section(s) would archive; no files changed.", #archived))
+            info(string.format("%d task(s) would archive; no files changed.", #archived))
             return
         end
 
         -- Write archive files first before modifying completed.tm.md:
         -- archive files are the destination of record, so if any archive
         -- write fails, completed.tm.md must be left untouched rather than
-        -- having already lost the sections.
+        -- having already lost the tasks.
         for _, group in ipairs(archive_groups) do
             local year_dir = tasks_dir_resolved .. "/" .. cfg.archive_dir .. "/" .. group.year
             if not mkdir_p(year_dir) then die("cannot create directory: " .. year_dir) end
@@ -233,7 +258,7 @@ local function M_run(args)
                     string.format("# Archived Tasks — %s-%s", group.year, group.month)
                 }
             end
-            -- Newest first, beneath the archive title; existing sections
+            -- Newest first, beneath the archive title; existing entries
             -- are carried over verbatim.
             archive_lines = core.prepend_blocks(archive_lines, group.blocks)
             local ok, err = write_lines_atomic(archive_path, archive_lines, write_nl)
@@ -244,7 +269,7 @@ local function M_run(args)
         if not ok then die(err) end
 
         for _, item in ipairs(archived) do
-            info(string.format('Archived section: "%s" -> %s', item.title, item.dest))
+            info(string.format('Archived task: "%s" -> %s', item.title, item.dest))
         end
     end
 

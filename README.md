@@ -33,8 +33,8 @@ It replaces the single-line constraints of formats like `todo.txt` while maintai
 - **Pure CommonMark Compliant:** Standard markdown task lists (`- [ ]`, `- [x]`) read and written by a fixed, one-pass grammar that is itself a strict CommonMark subset — starting immediately at line 1 with standard headings, verified independently by a CommonMark reference parser in the test suite.
 - **Deterministic & Machine-Readable:** Clear structure, explicit block separation, and a fixed 4-space context payload indent eliminate parsing ambiguity for automation tools, AI agents, and human workflows alike.
 - **Auditable History:** Completed tasks retain a timestamp, plus a git commit hash when the task involved one (`> **Completed:** YYYY-MM-DD git:<sha>`).
-- **Reverse-Chronological Archive:** Newly completed work is prepended to the top of `completed.tm.md` and grouped chronologically (`## YYYY-MM`), allowing developers and AI agents to inspect the latest accomplishments without scrolling.
-- **Automated Task Lifecycle:** `tm sweep` moves individual completed tasks from the active sheet into `completed.tm.md`; `tm archive` ages out older sections into monthly archives.
+- **Reverse-Chronological Archive:** Newly completed work is prepended to the top of `completed.tm.md` (newest first per sweep), allowing developers and AI agents to inspect the latest accomplishments without scrolling.
+- **Automated Task Lifecycle:** `tm sweep` moves individual completed tasks from the active sheet into `completed.tm.md`; `tm archive` ages out older tasks into monthly archives.
 - **Built-in Validator:** `tm validate` verifies strict spec compliance for task files and provides `--fix` auto-repair (including stripping the frontmatter block from pre-0.4 files).
 - **Safe Concurrent Writes:** Every rewrite goes through a uniquely named temp file and an atomic rename, and mutating commands hold a short-lived `.tm.lock` on the task directory so concurrent runs (a human and an AI agent, or parallel sessions in linked worktrees) wait for each other instead of losing updates; `tm next --claim` selects and claims a task under the same lock so two sessions never pick the same work.
 - **Dependency-Free Runtime:** The tool that reads and writes your tasks is pure, portable Lua with no runtime dependency of any kind — no C compiler, no vendored library, nothing to build to install it.
@@ -55,7 +55,7 @@ Taskmark task management is self-contained within `.tasks/` in each repository r
     ├── active.tm.md       # Current sprint: tasks in active execution
     ├── future.tm.md       # Planned work backlog (by topic/tag)
     ├── completed.tm.md    # Reverse-chronological archive of completed work
-    └── archive/           # Aged-out sections (moved automatically by `tm archive`)
+    └── archive/           # Aged-out tasks (moved automatically by `tm archive`)
         └── <YYYY>/
             └── <YYYY-MM>.tm.md
 ```
@@ -106,8 +106,8 @@ Optional conventions adapted from `todo.txt`, layered onto the existing task/pay
 4. **Task Completion:**
    - Commit code changes to git, if any.
    - Run `tm done <handle> --git` to atomically mark the task completed (`- [x]`), record today's ISO date, and append `git:<sha>` (or run without `--git` for non-coding tasks).
-5. **Sweep:** Run `tm sweep` to move completed tasks (each with its own payload) into `completed.tm.md` in strict reverse chronological order under a `## YYYY-MM` heading for the month of the sweep (or `## Sprint <id>` with `--sprint <id>`). Pending tasks, headings, and top-level prose stay put.
-6. **Archival:** Run `tm archive` periodically to move aged-out sections, newest first, to `.tasks/archive/<YYYY>/<YYYY-MM>.tm.md` — a section ages out once it is older than the 2 newest *and* its most recent `> **Completed:**` task is more than 14 days old.
+5. **Sweep:** Run `tm sweep` to move completed tasks (each with its own payload) into `completed.tm.md` directly beneath its title, newest first per sweep. Pending tasks, headings, and top-level prose stay put.
+6. **Archival:** Run `tm archive` periodically to move aged-out tasks, newest first, to `.tasks/archive/<YYYY>/<YYYY-MM>.tm.md` — a task ages out once it is outside the 2 newest *and* its `> **Completed:**` date is more than 14 days old (or oldest dated tasks archive first when `archive_max_bytes` / `--max-bytes` is set above `0`).
 
 ### Configuration
 
@@ -122,6 +122,7 @@ active_file: active.tm.md
 future_file: future.tm.md
 completed_file: completed.tm.md
 archive_dir: archive
+archive_max_bytes: 0
 ```
 
 `--tasks-dir` on the command line takes priority over both files; all three fall back to the built-in defaults shown above when unset. A project created before 0.4 that has only `doc/tasks/` (the old default) keeps resolving there until `.tasks/` exists or `tasks_dir` is configured.
@@ -169,8 +170,8 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 | `tm payload <handle\|pattern> [--append \| --replace]` | Print a task's payload without its indent; `--append` adds standard input beneath it and `--replace` puts standard input in its place, under the lock and only if the task still validates. |
 | `tm check-shas [--branch REF]` | Report `git:<sha>` citations in any task file that no longer name a commit (or, with `--branch`, are not reachable from `REF`); exits 1 if any. |
 | `tm remap OLD NEW [OLD NEW...]` | After a squash or rebase, replace citations of each old commit with its new one in every task file, the archive included. |
-| `tm sweep [--sprint <id>]` | Move every completed task (with its payload) from `active.tm.md` to `completed.tm.md`, newest first, under `## YYYY-MM` (or `## Sprint <id>`). |
-| `tm archive` | Move sections aged out of `completed.tm.md` into `archive/<YYYY>/<YYYY-MM>.tm.md`. |
+| `tm sweep` | Move every completed task (with its payload) from `active.tm.md` to `completed.tm.md`, newest first per sweep, directly beneath its title. |
+| `tm archive [--max-bytes N]` | Move tasks aged out of `completed.tm.md` into `archive/<YYYY>/<YYYY-MM>.tm.md` (with `--max-bytes N` or `archive_max_bytes` capping file size). |
 | `tm validate [file...]` | Validate task file(s) against SPEC-TASKMARK-06 (defaults to the configured active file). Also prints non-fatal `[WARN]` lines: a malformed date, two fields on one line (not checked in completed tasks), an identifier carried by two tasks among the files given. Output is coloured only on a terminal, and never when `NO_COLOR` is set. |
 | `tm indent [info]` | Prefix stdin with the four-space payload indent, optionally wrapped in a fenced code block. |
 | `tm dedent [--fence]` | Remove the four-space payload indent from stdin. |
@@ -186,7 +187,7 @@ The `tm` CLI provides utilities to manage and validate Taskmark documents.
 - `--git [REV]`: With `done`, record git commit SHA (`git:<sha>`, defaulting to `HEAD`).
 - `--from <FILE>`: With `move`, source file (default: `future.tm.md`, else `active.tm.md` when the task is only there).
 - `--to <FILE>`: With `move`, destination file (default: the file holding the `--before`/`--after` anchor, else `active.tm.md`).
-- `--sprint <id>`: With `sweep`, bucket the swept tasks under `## Sprint <id>` instead of the current month.
+- `--max-bytes <N>`: With `archive`, keep `completed.tm.md` within `N` bytes (`0` disables; overrides `archive_max_bytes` in `.taskmarkrc`).
 - `--dry-run`: Preview changes without modifying any files. Applies to `sweep` and `archive`.
 - `--orphan [BRANCH]`: With `init`, initialize an isolated orphan Git branch (default: `tasks`), add the directory to `.gitignore` (and record a non-default directory in `.taskmarkrc`), and mount it as a worktree.
 - `-m, --message <MSG>`: With `sync`, commit message for the orphan branch commit.
@@ -242,8 +243,8 @@ tm validate
 # Move completed tasks into the archive in reverse chronological order
 tm sweep
 
-# Preview a sweep into a named sprint section
-tm sweep --sprint 2026-S4 --dry-run
+# Preview a sweep
+tm sweep --dry-run
 
 # Validate a custom backlog file
 tm validate ~/tasks/backlog.tm.md
@@ -251,17 +252,9 @@ tm validate ~/tasks/backlog.tm.md
 # Validate multiple task files
 tm validate .tasks/active.tm.md .tasks/future.tm.md
 
-# Move completed tasks into the archive
-tm sweep
-
-# Preview a sweep into a named sprint section
-tm sweep --sprint 2026-S4 --dry-run
-
-# Close out a sprint: sweep its completed tasks under ## Sprint 2026-S4
-tm sweep --sprint 2026-S4
-
-# Archive aged sections in a specific directory
+# Archive aged tasks in a specific directory (optionally capped at 512 KiB)
 tm archive --tasks-dir /path/to/repo/.tasks
+tm archive --max-bytes 524288 --tasks-dir /path/to/repo/.tasks
 
 # Move a stack trace into a task's payload and back out again
 tm indent < trace.txt >> .tasks/active.tm.md

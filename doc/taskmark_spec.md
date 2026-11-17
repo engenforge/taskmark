@@ -366,9 +366,9 @@ A task and its payload move as one unit; the payload's extent is defined in §4.
 
 Removing a task from the middle of a list leaves the blank lines that surrounded it behind, so a tool that rewrites a file MUST normalize blank lines outside fenced code blocks: collapse any run of consecutive blank lines to one, and drop trailing blank lines at end of file. Runs of blank lines carry no meaning in CommonMark, and without this rule repeated sweeps accumulate vertical whitespace. Blank lines *inside* a fenced code block are content and MUST be preserved exactly.
 
-Swept tasks are bucketed in `completed.tm.md` (§6.3) under a section named for the month of the sweep, `## YYYY-MM`. A tool MAY let the user name the bucket instead — `## Sprint <id>` for a project that works in sprints. The bucket records when work left the active file; each task's own `Completed` date remains the authority for when it was done, and is what archive aging uses (§5.5).
+Swept tasks are inserted directly into `completed.tm.md` (§6.3) beneath its title, newest first, with no section headings. Each task's own `Completed` date is the authority for when it was done, and is what archive aging uses (§5.5).
 
-Original headings are **not** copied into `completed.tm.md`. Active work is grouped topically for planning; completed work is grouped chronologically for audit. Copying topical headings into the archive would scatter fragmentary duplicates of them throughout it. A task that becomes unclear once separated from its heading is a task whose description was leaning on that heading — `+project` and `@context` tags exist to make a task self-standing.
+Original headings are **not** copied into `completed.tm.md`. Active work is grouped topically for planning; completed work is ordered newest first for audit. Copying topical headings into the archive would scatter fragmentary duplicates of them throughout it. A task that becomes unclear once separated from its heading is a task whose description was leaning on that heading — `+project` and `@context` tags exist to make a task self-standing.
 
 Headings and top-level prose in `active.tm.md` are never swept and are never automatically deleted, including when every task beneath them has been swept away. In keeping with the minimalist goals of the format, removing a heading left empty by a sweep is left to the user, if it is wanted at all.
 
@@ -376,19 +376,19 @@ Headings and top-level prose in `active.tm.md` are never swept and are never aut
 
 Taskmark has no rotation operation: a sprint, milestone, or other cycle is a workflow convention, not something the format records. At a boundary — or whenever `active.tm.md` grows unwieldy — a project that works in cycles typically:
 
-1. Sweeps (§5.3), optionally bucketing the swept tasks under the cycle's name (`## Sprint <id>`).
+1. Sweeps (§5.3).
 2. Edits any cycle headings in `active.tm.md` by hand.
 3. Chooses what to bring in from `future.tm.md`.
 
 **`future.tm.md` is never changed automatically.** Moving a task from planned work into active work is always a deliberate user decision — it is what planning *is* — and no tool selects, promotes, or moves those tasks on the user's behalf. A tool MAY offer to open `future.tm.md`, or to move one named task the user has chosen, but it MUST NOT promote tasks by any automatic rule.
 
-A section in `completed.tm.md` carries no date of its own. Its age derives from the most recent `Completed` date among its own tasks (§5.5). One date convention per task is sufficient; a section-level timestamp would record only when a section happened to move, which says nothing about the work.
-
 ### 5.5 Archive Aging
 
-A section ages out of `completed.tm.md` when it is **both** outside the two most recent sections **and** its most recent `Completed` date is more than fourteen days old. With monthly sections this keeps the current and previous month in `completed.tm.md`, so the file stays short. Both thresholds are tool defaults and MAY be configurable; the rule that age derives from the tasks' own `Completed` stamps is normative.
+Archival operates on **individual tasks**, not sections. A task ages out of `completed.tm.md` when it is **both** outside the two most recent tasks **and** its `Completed` date is more than fourteen days old. Both thresholds are tool defaults and MAY be configurable; the rule that age derives from each task's own `Completed` stamp is normative.
 
-An aged-out section is moved **verbatim** — its heading and every task and payload line unchanged — into `archive/<YYYY>/<YYYY-MM>.tm.md`, where the year and month come from that same most recent `Completed` date. Multiple sections may land in one monthly file. Like `completed.tm.md`, an archive file is kept newest first: arriving sections are inserted directly beneath its title, and sections already there are carried over unchanged.
+A tool MAY also enforce a configurable byte-size cap on `completed.tm.md` (`archive_max_bytes`, `0` / disabled by default). When configured above `0` and `completed.tm.md` still exceeds the cap after time-based aging, the oldest dated tasks archive first until the file is within the cap, while always retaining at least the single newest task. Any level-2+ heading left empty in `completed.tm.md` after its tasks archive is removed.
+
+An aged-out task is moved **verbatim** — its task line and payload unchanged — into `archive/<YYYY>/<YYYY-MM>.tm.md`, where the year and month come from that task's own `Completed` date. Multiple tasks may land in one monthly file. Like `completed.tm.md`, an archive file is kept newest first: arriving tasks are inserted directly beneath its title, and entries already there are carried over unchanged.
 
 ## 6. File Conventions
 
@@ -445,13 +445,12 @@ Tasks leave this file only when the user moves them into `active.tm.md` (§5.4).
 
 ### 6.3 `completed.tm.md` — Reverse-Chronological Archive
 
-Both sections and tasks within each section are maintained in strict **reverse chronological order** (newest work first). On each sweep, tasks are bucketed under chronological headings (`## YYYY-MM` or `## Sprint <id>`).
+Tasks are prepended beneath the document title, newest first per sweep, with no section or sprint headings.
 
-The **document title** is the first heading in the file when it is level 1 (e.g. `# Completed Archive`). The **top section** is the first heading beneath the title — or, in a file with no title, the first heading of all.
+The **document title** is the first heading in the file when it is level 1 (e.g. `# Completed Archive`).
 
-* If the top section is the matching section, newly completed tasks are **prepended** into it, directly beneath its section heading.
-* Otherwise a new section heading is created at the top: directly beneath the title, or above the first heading when there is no title, or after any preamble prose when the file has no headings at all.
-* Older sections and tasks remain untouched below.
+* Newly completed tasks are **prepended** directly beneath the title — or above the first heading/task when there is no title, or after any preamble prose when the file has no headings or tasks.
+* Older tasks remain untouched below.
 * Tasks moved by one sweep are ordered newest first by their own `Completed` dates; tasks with equal or no dates keep their order from the active file.
 
 This guarantees that developers and AI coding agents inspect the latest accomplishments immediately without reading through an arbitrarily long file.
@@ -459,15 +458,11 @@ This guarantees that developers and AI coding agents inspect the latest accompli
 ```markdown
 # Completed Archive
 
-## 2026-11
-
 - [x] (A) +api Most recently completed task
     > **Completed:** 2026-11-08 git:abc1234
 
 - [x] Earlier completed task in same month
     > **Completed:** 2026-11-02 git:789abcd
-
-## 2026-10
 
 - [x] +cli Older completed task
     > **Completed:** 2026-10-15 git:def5678
@@ -475,18 +470,16 @@ This guarantees that developers and AI coding agents inspect the latest accompli
 
 The heading text `# Completed Archive` is conventional, not load-bearing (§4.2): a tool identifies the title by its position and level, whatever it says.
 
-Two branches that both sweep will conflict here, since both insert at the same anchor. The conflict is always safe to resolve by keeping both sides: sections and tasks are independent, and only their order is at stake.
+Two branches that both sweep will conflict here, since both insert at the same anchor. The conflict is always safe to resolve by keeping both sides: tasks are independent, and only their order is at stake.
 
-### 6.4 `archive/<YYYY>/<YYYY-MM>.tm.md` — Aged Sections
+### 6.4 `archive/<YYYY>/<YYYY-MM>.tm.md` — Aged Tasks
 
-Tool-managed, never hand-authored. Sections arrive here by the aging rule in §5.5, each keeping its original heading and content verbatim, and are kept newest first beneath the file's title.
+Tool-managed, never hand-authored. Tasks arrive here by the aging rule in §5.5, each keeping its task line and payload verbatim, and are kept newest first beneath the file's title.
 
 The filename repeats the year — `archive/2026/2026-01.tm.md` — so that every archive file identifies its own period without reference to the directory holding it. A file copied, attached, or opened on its own is still unambiguous.
 
 ```markdown
 # Archived Tasks — 2026-01
-
-## 2026-01
 
 - [x] +net Task completed the prior January
     > **Completed:** 2026-01-15 git:9f1e2a3
@@ -571,6 +564,7 @@ active_file: active.tm.md
 future_file: future.tm.md
 completed_file: completed.tm.md
 archive_dir: archive
+archive_max_bytes: 0
 ```
 
 Blank lines and comment lines — those whose first non-space character is `#` — are ignored. Every value is a literal scalar string.
@@ -591,7 +585,7 @@ Resolution is **per key**, not per file: a local file that sets only `tasks_dir`
 
 ### 9.3 Scope
 
-Configuration controls *where* a tool reads and writes the files this specification defines. It does not change file contents, task grammar, or any other rule in this document. `archive_dir` renames only the top-level folder; the `<YYYY>/<YYYY-MM>.tm.md` layout beneath it is fixed.
+Configuration controls the file locations this specification defines and the optional `archive_max_bytes` size cap (§5.5, default `0` to disable size-based aging). It does not change task grammar or any other rule in this document. `archive_dir` renames only the top-level folder; the `<YYYY>/<YYYY-MM>.tm.md` layout beneath it is fixed.
 
 ## 10. Isolation and Portability
 
